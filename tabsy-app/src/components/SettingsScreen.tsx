@@ -278,6 +278,55 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         )}
       </div>
 
+      {/* Help & FAQ Section (Tahap 9 Requirement) */}
+      <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+        <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+          <ShieldCheck className="w-4 h-4 text-emerald-500" />
+          Panduan & Tanya Jawab (FAQ)
+        </h3>
+        <div className="space-y-2.5 text-xs text-slate-600 dark:text-slate-400">
+          <div>
+            <p className="font-bold text-slate-900 dark:text-white">Q: Bagaimana cara mencatat pengeluaran kilat?</p>
+            <p>Cukup ketik nama dan nominal di tab <strong>Catat</strong>, contoh: <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-emerald-600 font-mono">kopi 25k</code> atau <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-emerald-600 font-mono">parkir 5rb</code>, lalu tekan Enter atau klik Simpan.</p>
+          </div>
+          <div>
+            <p className="font-bold text-slate-900 dark:text-white">Q: Bagaimana jika ganti HP, laptop, atau pindah domain web?</p>
+            <p>Penyimpanan browser terikat pada <em>Origin</em> (alamat web & browser saat ini). Sebelum berganti perangkat atau domain, lakukan <strong>Cadangkan Data (JSON)</strong> di atas, lalu pulihkan di perangkat baru.</p>
+          </div>
+          <div>
+            <p className="font-bold text-slate-900 dark:text-white">Q: Apakah data saya aman dan pribadi?</p>
+            <p>Ya, 100% aman dan privat. Tidak ada server hosting atau pihak ketiga yang menyimpan data transaksi Anda di versi MVP ini.</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Feedback Channel (Tahap 9 Requirement) */}
+      <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+        <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+          <RefreshCw className="w-4 h-4 text-blue-500" />
+          Kanal Feedback & Dukungan
+        </h3>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          Punya saran fitur atau menemukan kendala? Masukan Anda sangat berharga untuk pengembangan rilis berikutnya (v1.1 Split Item & v1.2 OCR).
+        </p>
+        <div className="flex flex-wrap gap-2 pt-1">
+          <a
+            href="mailto:support@catatcepat.app?subject=Feedback%20CatatCepat%20v1.0"
+            className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+          >
+            ✉️ Kirim Email Feedback
+          </a>
+          <a
+            href="https://github.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+          >
+            🐙 Laporkan Bug di GitHub
+          </a>
+        </div>
+      </div>
+
       {/* Danger Zone */}
       <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-rose-200 dark:border-rose-950/80 shadow-sm space-y-3">
         <h3 className="text-xs font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
