@@ -70,10 +70,13 @@ export const Navigation: React.FC<NavigationProps> = ({
       </header>
 
       {/* Floating Pill Bottom Navigation Bar (Guaranteed ALWAYS VISIBLE on all mobile sizes) */}
-      <div className="fixed bottom-3 sm:bottom-5 left-0 right-0 z-50 flex items-center justify-center px-4 pointer-events-none">
-        <div className="pointer-events-auto flex items-center gap-2 max-w-sm w-full">
+      <div
+        id="tabsy-bottom-navbar"
+        className="fixed bottom-3 sm:bottom-4 inset-x-0 z-[9999] flex items-center justify-center px-3 pointer-events-none select-none"
+      >
+        <div className="pointer-events-auto flex items-center gap-2 w-full max-w-[380px]">
           {/* Main Tabs Capsule */}
-          <nav className="flex-1 bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl border border-slate-200/90 dark:border-slate-800 rounded-full shadow-[0_10px_35px_rgba(15,23,42,0.18)] py-1.5 px-2 flex items-center justify-around">
+          <nav className="flex-1 bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl border border-slate-200/90 dark:border-slate-800 rounded-full shadow-[0_12px_36px_rgba(15,23,42,0.18)] py-1.5 px-2 flex items-center justify-around">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -105,7 +108,7 @@ export const Navigation: React.FC<NavigationProps> = ({
           <button
             onClick={() => onTabChange('pengaturan')}
             title="Akun Saya"
-            className={`w-12 h-12 rounded-full border-2 flex items-center justify-center text-xl shadow-[0_10px_30px_rgba(15,23,42,0.16)] transition-all duration-200 active:scale-95 ${
+            className={`w-12 h-12 rounded-full border-2 flex items-center justify-center text-xl shadow-[0_10px_30px_rgba(15,23,42,0.16)] transition-all duration-200 shrink-0 active:scale-95 ${
               activeTab === 'pengaturan'
                 ? 'bg-blue-600 border-white text-white shadow-blue-600/40 ring-2 ring-blue-400 scale-105'
                 : 'bg-white/95 dark:bg-slate-900/95 border-slate-200 dark:border-slate-800 hover:border-blue-400'

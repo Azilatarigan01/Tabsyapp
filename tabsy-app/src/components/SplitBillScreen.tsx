@@ -15,6 +15,9 @@ import {
   UtensilsCrossed,
   ToggleLeft,
   ToggleRight,
+  Sparkles,
+  Receipt,
+  ArrowRight,
 } from 'lucide-react';
 
 interface BillItem {
@@ -81,11 +84,9 @@ export const SplitBillScreen: React.FC = () => {
   const calculationItemMode = useMemo(() => {
     if (items.length === 0 || participants.length === 0) return null;
 
-    // Subtotal is sum of all item prices
     const subtotal = items.reduce((sum, item) => sum + item.price, 0);
     if (subtotal <= 0) return null;
 
-    // Calculate tax & service
     let taxAmount = 0;
     if (hasTax) {
       if (taxType === 'percent') {
@@ -108,7 +109,6 @@ export const SplitBillScreen: React.FC = () => {
 
     const total = subtotal + taxAmount + serviceAmount;
 
-    // Calculate base item cost per participant
     const participantBases: Record<string, number> = {};
     participants.forEach((p) => {
       participantBases[p] = 0;
@@ -126,7 +126,6 @@ export const SplitBillScreen: React.FC = () => {
       }
     });
 
-    // Allocate Tax and Service proportionally to each participant's item subtotal
     const shares = participants.map((name) => {
       const pSubtotal = participantBases[name] || 0;
       const ratio = subtotal > 0 ? pSubtotal / subtotal : 0;
@@ -144,7 +143,6 @@ export const SplitBillScreen: React.FC = () => {
       };
     });
 
-    // Reconcile rounding difference to match exact total
     const currentSum = shares.reduce((sum, s) => sum + s.finalAmount, 0);
     const diff = total - currentSum;
     if (diff !== 0 && shares.length > 0) {
@@ -177,7 +175,6 @@ export const SplitBillScreen: React.FC = () => {
     }
     const removedName = participants[index];
     setParticipants(participants.filter((_, i) => i !== index));
-    // Clean up items referencing this participant
     setItems(items.map((it) => ({
       ...it,
       sharedWith: it.sharedWith.filter((p) => p !== removedName),
@@ -213,7 +210,7 @@ export const SplitBillScreen: React.FC = () => {
 
   const toggleConsumerForNewItem = (pName: string) => {
     if (newItemSharedWith.includes(pName)) {
-      if (newItemSharedWith.length === 1) return; // Keep at least one
+      if (newItemSharedWith.length === 1) return;
       setNewItemSharedWith(newItemSharedWith.filter((p) => p !== pName));
     } else {
       setNewItemSharedWith([...newItemSharedWith, pName]);
@@ -234,7 +231,7 @@ export const SplitBillScreen: React.FC = () => {
       '*Rincian Pembayaran Tiap Orang:*',
       ...activeResult.shares.map((s) => `• *${s.name}*: ${formatRupiah(s.finalAmount)}`),
       '────────────────────────────',
-      'Dihitung presisi tanpa selisih via CatatCepat ⚡',
+      'Dihitung presisi tanpa selisih via Tabsy ⚡',
     ];
     return lines.join('\n');
   };
@@ -251,12 +248,11 @@ export const SplitBillScreen: React.FC = () => {
     if (typeof navigator !== 'undefined' && navigator.share) {
       try {
         await navigator.share({
-          title: 'Rekap Patungan Makan - CatatCepat',
+          title: 'Rekap Patungan Makan - Tabsy',
           text,
         });
         return;
       } catch (err) {
-        // User dismissed or aborted share dialog
         if ((err as Error).name !== 'AbortError') {
           handleShareWhatsApp();
         }
@@ -273,25 +269,35 @@ export const SplitBillScreen: React.FC = () => {
 
   return (
     <div className="max-w-md mx-auto px-4 py-4 space-y-4">
-      {/* Header */}
-      <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
-        <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-          <Calculator className="w-5 h-5 text-emerald-500" />
-          Kalkulator Bagi Tagihan (Split Bill)
-        </h2>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          Hitung patungan makan adil tanpa selisih. Mendukung resto tanpa pajak hingga pesanan beda-beda menu.
+      {/* Header Card: Sleek Neo-Banking Rounded Design */}
+      <div className="bg-white dark:bg-slate-900 p-6 rounded-[28px] border border-blue-50/80 dark:border-slate-800 shadow-[0_8px_30px_rgba(30,58,138,0.04)] space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-sky-400 text-white flex items-center justify-center shadow-lg shadow-blue-500/25 shrink-0">
+            <Calculator className="w-6 h-6" />
+          </div>
+          <div>
+            <span className="text-[11px] font-bold text-blue-600 dark:text-sky-400 uppercase tracking-wider block">
+              Alat Patungan
+            </span>
+            <h2 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">
+              Kalkulator Bagi Tagihan
+            </h2>
+          </div>
+        </div>
+
+        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+          Hitung patungan makan adil tanpa selisih senilai 1 rupiah pun. Mendukung resto tanpa pajak hingga pesanan beda menu.
         </p>
 
-        {/* Mode Selector: Bagi Rata vs Beda Menu */}
-        <div className="flex p-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold pt-1">
+        {/* Mode Selector Capsule */}
+        <div className="flex p-1.5 rounded-2xl bg-slate-100/80 dark:bg-slate-800/80 text-xs font-bold gap-1">
           <button
             type="button"
             onClick={() => setSplitMode('rata')}
-            className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
               splitMode === 'rata'
-                ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
-                : 'text-slate-500 hover:text-slate-700'
+                ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-sky-400 shadow-sm font-extrabold'
+                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
             }`}
           >
             <Users className="w-3.5 h-3.5" />
@@ -300,10 +306,10 @@ export const SplitBillScreen: React.FC = () => {
           <button
             type="button"
             onClick={() => setSplitMode('item')}
-            className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
               splitMode === 'item'
-                ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
-                : 'text-slate-500 hover:text-slate-700'
+                ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-sky-400 shadow-sm font-extrabold'
+                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
             }`}
           >
             <UtensilsCrossed className="w-3.5 h-3.5" />
@@ -312,14 +318,17 @@ export const SplitBillScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* Participants Management Card (Used in both modes) */}
-      <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
-        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
-          <span className="flex items-center gap-1.5">
-            <Users className="w-3.5 h-3.5 text-emerald-500" />
-            Daftar Peserta ({participants.length} orang):
+      {/* Participants Management Card */}
+      <div className="bg-white dark:bg-slate-900 p-6 rounded-[28px] border border-blue-50/80 dark:border-slate-800 shadow-[0_8px_30px_rgba(30,58,138,0.04)] space-y-4">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+            <Users className="w-4 h-4 text-blue-600" />
+            Daftar Peserta
+          </label>
+          <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-sky-400 border border-blue-100 dark:border-blue-900">
+            {participants.length} Orang
           </span>
-        </label>
+        </div>
 
         {/* Add participant input */}
         <form onSubmit={handleAddParticipant} className="flex gap-2">
@@ -327,23 +336,23 @@ export const SplitBillScreen: React.FC = () => {
             type="text"
             value={newParticipant}
             onChange={(e) => setNewParticipant(e.target.value)}
-            placeholder="Tambah nama peserta (cth: Dodi)..."
-            className="flex-1 h-9 px-3 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+            placeholder="Ketik nama teman (cth: Dodi)..."
+            className="flex-1 h-11 px-4 text-xs font-medium rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all"
           />
           <button
             type="submit"
-            className="px-3 h-9 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 rounded-xl text-xs font-semibold flex items-center gap-1 shrink-0"
+            className="px-4 h-11 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-700 hover:to-sky-600 text-white rounded-2xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/20 active:scale-95 transition-all shrink-0"
           >
-            <Plus className="w-3.5 h-3.5" /> Tambah
+            <Plus className="w-4 h-4" /> Tambah
           </button>
         </form>
 
         {/* Participants Badges */}
-        <div className="flex flex-wrap gap-1.5 pt-1">
+        <div className="flex flex-wrap gap-2 pt-1">
           {participants.map((name, idx) => (
             <span
               key={idx}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700"
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-50/70 dark:bg-slate-800 text-blue-900 dark:text-blue-200 border border-blue-100 dark:border-slate-700"
             >
               <span>{name}</span>
               <button
@@ -352,7 +361,7 @@ export const SplitBillScreen: React.FC = () => {
                 className="text-slate-400 hover:text-rose-500 transition-colors"
                 title="Hapus peserta"
               >
-                <Trash2 className="w-3 h-3" />
+                <Trash2 className="w-3.5 h-3.5" />
               </button>
             </span>
           ))}
@@ -361,12 +370,12 @@ export const SplitBillScreen: React.FC = () => {
 
       {/* Mode 1: Bagi Rata Subtotal Input */}
       {splitMode === 'rata' && (
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
-          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-            Subtotal Tagihan (Rupiah) *
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-[28px] border border-blue-50/80 dark:border-slate-800 shadow-[0_8px_30px_rgba(30,58,138,0.04)] space-y-3">
+          <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+            Subtotal Tagihan Bersih (Sebelum Pajak & Servis)
           </label>
           <div className="relative">
-            <span className="absolute left-3.5 top-3 text-sm font-bold text-slate-400">Rp</span>
+            <span className="absolute left-4 top-3 text-sm font-extrabold text-blue-500">Rp</span>
             <input
               type="number"
               value={subtotalSimple}
@@ -374,7 +383,7 @@ export const SplitBillScreen: React.FC = () => {
               placeholder="100000"
               min="1"
               max="1000000000"
-              className="w-full h-11 pl-11 pr-4 text-base font-bold rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+              className="w-full h-12 pl-12 pr-4 text-lg font-black rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all"
             />
           </div>
         </div>
@@ -382,18 +391,18 @@ export const SplitBillScreen: React.FC = () => {
 
       {/* Mode 2: Per Item Form */}
       {splitMode === 'item' && (
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-[28px] border border-blue-50/80 dark:border-slate-800 shadow-[0_8px_30px_rgba(30,58,138,0.04)] space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
               Daftar Menu Pesanan ({items.length} item)
             </h3>
-            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+            <span className="text-xs font-bold text-blue-600 dark:text-sky-400">
               Subtotal: {formatRupiah(items.reduce((s, it) => s + it.price, 0))}
             </span>
           </div>
 
           {/* Form Tambah Item Menu */}
-          <form onSubmit={handleAddItem} className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
+          <form onSubmit={handleAddItem} className="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 space-y-3">
             <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
               + Tambah Menu Pesanan
             </div>
@@ -403,21 +412,21 @@ export const SplitBillScreen: React.FC = () => {
                 value={newItemName}
                 onChange={(e) => setNewItemName(e.target.value)}
                 placeholder="Nama menu (cth: Ayam Geprek)"
-                className="h-9 px-3 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+                className="h-10 px-3.5 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:border-blue-500 focus:outline-none"
               />
               <input
                 type="number"
                 value={newItemPrice}
                 onChange={(e) => setNewItemPrice(e.target.value ? parseInt(e.target.value, 10) : '')}
                 placeholder="Harga (cth: 25000)"
-                className="h-9 px-3 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
+                className="h-10 px-3.5 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:border-blue-500 focus:outline-none"
               />
             </div>
 
             {/* Checkbox siapa yang makan */}
             <div>
-              <span className="text-[11px] font-semibold text-slate-500 block mb-1">
-                Siapa yang menikmati menu ini? (Bisa lebih dari 1 orang untuk menu sharing)
+              <span className="text-[11px] font-semibold text-slate-500 block mb-1.5">
+                Siapa yang menikmati menu ini? (Bisa lebih dari 1 orang untuk patungan)
               </span>
               <div className="flex flex-wrap gap-1.5">
                 {participants.map((pName) => {
@@ -427,10 +436,10 @@ export const SplitBillScreen: React.FC = () => {
                       key={pName}
                       type="button"
                       onClick={() => toggleConsumerForNewItem(pName)}
-                      className={`px-2 py-0.5 rounded-md text-[11px] font-medium border transition-colors ${
+                      className={`px-3 py-1 rounded-xl text-xs font-bold border transition-all ${
                         isChecked
-                          ? 'bg-emerald-600 text-white border-emerald-600'
-                          : 'bg-white dark:bg-slate-900 text-slate-600 border-slate-300 dark:border-slate-700'
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                          : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
                       }`}
                     >
                       {isChecked ? '✓ ' : ''}{pName}
@@ -442,7 +451,7 @@ export const SplitBillScreen: React.FC = () => {
 
             <button
               type="submit"
-              className="w-full h-8 bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 text-xs font-semibold rounded-lg"
+              className="w-full h-10 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-700 hover:to-sky-600 text-white text-xs font-bold rounded-xl shadow-md shadow-blue-500/20 active:scale-95 transition-all"
             >
               + Simpan Menu ke Tagihan
             </button>
@@ -453,12 +462,12 @@ export const SplitBillScreen: React.FC = () => {
             {items.map((item) => (
               <div
                 key={item.id}
-                className="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs"
+                className="flex items-center justify-between p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs shadow-sm"
               >
                 <div>
                   <p className="font-bold text-slate-900 dark:text-white">{item.name}</p>
-                  <p className="text-[11px] text-slate-500">
-                    Dimakan oleh: <strong className="text-emerald-600">{item.sharedWith.join(', ')}</strong>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Dimakan oleh: <strong className="text-blue-600 dark:text-sky-400">{item.sharedWith.join(', ')}</strong>
                     {item.sharedWith.length > 1 && ` (dibagi ${item.sharedWith.length})`}
                   </p>
                 </div>
@@ -469,9 +478,9 @@ export const SplitBillScreen: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => handleRemoveItem(item.id)}
-                    className="text-slate-400 hover:text-rose-500"
+                    className="text-slate-400 hover:text-rose-500 transition-colors"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -481,31 +490,31 @@ export const SplitBillScreen: React.FC = () => {
       )}
 
       {/* Tax and Service Controls with ON / OFF Toggles */}
-      <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+      <div className="bg-white dark:bg-slate-900 p-6 rounded-[28px] border border-blue-50/80 dark:border-slate-800 shadow-[0_8px_30px_rgba(30,58,138,0.04)] space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
             Pengaturan Pajak & Biaya Layanan
           </h3>
-          <span className="text-[11px] text-slate-400">
-            {(!hasTax && !hasService) ? 'Mode: Tanpa Pajak & Servis' : 'Dihitung dari Subtotal'}
+          <span className="text-[11px] font-medium text-slate-400">
+            {(!hasTax && !hasService) ? 'Mode: Bersih Tanpa Tambahan' : 'Dihitung dari Subtotal'}
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {/* Tax Control */}
-          <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
+          <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 space-y-2.5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
                 Pajak Resto (PB1 / PPN)
               </span>
               <button
                 type="button"
                 onClick={() => setHasTax(!hasTax)}
-                className={`flex items-center gap-1 text-[11px] font-bold ${
-                  hasTax ? 'text-emerald-600' : 'text-slate-400'
+                className={`flex items-center gap-1 text-xs font-bold transition-colors ${
+                  hasTax ? 'text-blue-600 dark:text-sky-400' : 'text-slate-400'
                 }`}
               >
-                {hasTax ? <ToggleRight className="w-5 h-5 text-emerald-600" /> : <ToggleLeft className="w-5 h-5 text-slate-400" />}
+                {hasTax ? <ToggleRight className="w-6 h-6 text-blue-600 dark:text-sky-400" /> : <ToggleLeft className="w-6 h-6 text-slate-300 dark:text-slate-600" />}
                 {hasTax ? 'Aktif' : 'Mati (0)'}
               </button>
             </div>
@@ -517,20 +526,28 @@ export const SplitBillScreen: React.FC = () => {
                   value={taxValue}
                   onChange={(e) => setTaxValue(e.target.value ? parseFloat(e.target.value) : '')}
                   placeholder={taxType === 'percent' ? '10' : '10000'}
-                  className="flex-1 h-9 px-2.5 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-bold"
+                  className="flex-1 h-10 px-3 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-bold focus:border-blue-500 focus:outline-none"
                 />
-                <div className="flex rounded-lg overflow-hidden border border-slate-300 dark:border-slate-700 text-[10px]">
+                <div className="flex rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 text-[11px] p-0.5 bg-slate-100 dark:bg-slate-800">
                   <button
                     type="button"
                     onClick={() => setTaxType('percent')}
-                    className={`px-2 font-bold ${taxType === 'percent' ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600'}`}
+                    className={`px-3 py-1 font-bold rounded-lg transition-all ${
+                      taxType === 'percent'
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400'
+                    }`}
                   >
                     %
                   </button>
                   <button
                     type="button"
                     onClick={() => setTaxType('nominal')}
-                    className={`px-2 font-bold ${taxType === 'nominal' ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600'}`}
+                    className={`px-3 py-1 font-bold rounded-lg transition-all ${
+                      taxType === 'nominal'
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400'
+                    }`}
                   >
                     Rp
                   </button>
@@ -540,19 +557,19 @@ export const SplitBillScreen: React.FC = () => {
           </div>
 
           {/* Service Control */}
-          <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
+          <div className="p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 space-y-2.5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
                 Biaya Layanan (Service)
               </span>
               <button
                 type="button"
                 onClick={() => setHasService(!hasService)}
-                className={`flex items-center gap-1 text-[11px] font-bold ${
-                  hasService ? 'text-emerald-600' : 'text-slate-400'
+                className={`flex items-center gap-1 text-xs font-bold transition-colors ${
+                  hasService ? 'text-blue-600 dark:text-sky-400' : 'text-slate-400'
                 }`}
               >
-                {hasService ? <ToggleRight className="w-5 h-5 text-emerald-600" /> : <ToggleLeft className="w-5 h-5 text-slate-400" />}
+                {hasService ? <ToggleRight className="w-6 h-6 text-blue-600 dark:text-sky-400" /> : <ToggleLeft className="w-6 h-6 text-slate-300 dark:text-slate-600" />}
                 {hasService ? 'Aktif' : 'Mati (0)'}
               </button>
             </div>
@@ -564,20 +581,28 @@ export const SplitBillScreen: React.FC = () => {
                   value={serviceValue}
                   onChange={(e) => setServiceValue(e.target.value ? parseFloat(e.target.value) : '')}
                   placeholder={serviceType === 'percent' ? '5' : '5000'}
-                  className="flex-1 h-9 px-2.5 text-xs rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-bold"
+                  className="flex-1 h-10 px-3 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-bold focus:border-blue-500 focus:outline-none"
                 />
-                <div className="flex rounded-lg overflow-hidden border border-slate-300 dark:border-slate-700 text-[10px]">
+                <div className="flex rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 text-[11px] p-0.5 bg-slate-100 dark:bg-slate-800">
                   <button
                     type="button"
                     onClick={() => setServiceType('percent')}
-                    className={`px-2 font-bold ${serviceType === 'percent' ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600'}`}
+                    className={`px-3 py-1 font-bold rounded-lg transition-all ${
+                      serviceType === 'percent'
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400'
+                    }`}
                   >
                     %
                   </button>
                   <button
                     type="button"
                     onClick={() => setServiceType('nominal')}
-                    className={`px-2 font-bold ${serviceType === 'nominal' ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600'}`}
+                    className={`px-3 py-1 font-bold rounded-lg transition-all ${
+                      serviceType === 'nominal'
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400'
+                    }`}
                   >
                     Rp
                   </button>
@@ -588,46 +613,54 @@ export const SplitBillScreen: React.FC = () => {
         </div>
       </div>
 
-      {/* Calculation Results Card */}
+      {/* Calculation Results Card: Neo-Banking Luminous Blue Card (Replacing Ugly Dark Box) */}
       {activeResult ? (
-        <div className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 shadow-md space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div className="relative overflow-hidden bg-gradient-to-br from-blue-600 via-blue-700 to-sky-600 text-white p-6 rounded-[32px] shadow-xl shadow-blue-500/25 space-y-5 animate-in fade-in">
+          {/* Subtle Ambient Background Ring */}
+          <div className="absolute -top-12 -right-12 w-48 h-48 rounded-full bg-white/10 blur-2xl pointer-events-none" />
+          <div className="absolute -bottom-12 -left-12 w-48 h-48 rounded-full bg-sky-400/20 blur-2xl pointer-events-none" />
+
+          {/* Card Header & Total */}
+          <div className="relative z-10 flex items-start justify-between pb-4 border-b border-white/15">
             <div>
-              <span className="text-xs text-slate-400">Total Tagihan Final</span>
-              <p className="text-2xl font-black text-emerald-400">
+              <span className="text-[11px] font-bold tracking-wider uppercase text-blue-200 block mb-1">
+                Total Tagihan Final
+              </span>
+              <p className="text-3xl font-black text-white tracking-tight drop-shadow-sm">
                 {formatRupiah(activeResult.total)}
               </p>
             </div>
-            <div className="text-right text-xs text-slate-400 space-y-0.5">
-              <p>Subtotal: {formatRupiah(activeResult.subtotal)}</p>
-              <p>Pajak: {formatRupiah(activeResult.taxAmount)}</p>
-              <p>Service: {formatRupiah(activeResult.serviceAmount)}</p>
+            <div className="text-right text-[11px] text-blue-100/90 space-y-0.5 font-medium">
+              <p>Subtotal: <strong className="text-white">{formatRupiah(activeResult.subtotal)}</strong></p>
+              <p>Pajak: <strong className="text-white">{formatRupiah(activeResult.taxAmount)}</strong></p>
+              <p>Service: <strong className="text-white">{formatRupiah(activeResult.serviceAmount)}</strong></p>
             </div>
           </div>
 
           {/* Breakdown per participant */}
-          <div className="space-y-2">
-            <span className="text-xs font-bold text-slate-300">
-              Rincian Bagian per Orang ({splitMode === 'rata' ? 'Bagi Rata' : 'Sesuai Menu Pesanan'}):
+          <div className="relative z-10 space-y-2.5">
+            <span className="text-xs font-extrabold text-blue-100 flex items-center gap-1.5">
+              <Receipt className="w-3.5 h-3.5" />
+              Rincian Bagian per Orang ({splitMode === 'rata' ? 'Bagi Rata' : 'Sesuai Menu'}):
             </span>
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               {activeResult.shares.map((s, idx) => (
                 <div
                   key={idx}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-slate-800/80 border border-slate-700/60"
+                  className="flex items-center justify-between p-3 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 shadow-sm"
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold flex items-center justify-center">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-6 h-6 rounded-full bg-white/25 text-white text-[11px] font-black flex items-center justify-center shadow-inner">
                       {idx + 1}
                     </span>
-                    <span className="text-sm font-semibold text-white">{s.name}</span>
+                    <span className="text-sm font-bold text-white tracking-tight">{s.name}</span>
                     {('extraRemainder' in s && s.extraRemainder > 0) && (
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-medium">
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400 text-amber-950 font-black">
                         +Rp1 sisa
                       </span>
                     )}
                   </div>
-                  <span className="text-sm font-black text-emerald-400">
+                  <span className="text-base font-black text-white tracking-tight">
                     {formatRupiah(s.finalAmount)}
                   </span>
                 </div>
@@ -636,19 +669,19 @@ export const SplitBillScreen: React.FC = () => {
           </div>
 
           {/* Share Action Buttons */}
-          <div className="grid grid-cols-2 gap-2 pt-2">
+          <div className="relative z-10 grid grid-cols-2 gap-2.5 pt-1">
             <button
               onClick={handleCopy}
-              className="h-11 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 border border-slate-700 transition-colors"
+              className="h-12 rounded-2xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold flex items-center justify-center gap-2 backdrop-blur-md border border-white/25 active:scale-95 transition-all shadow-sm"
             >
               {copied ? (
                 <>
-                  <Check className="w-4 h-4 text-emerald-400" />
+                  <Check className="w-4 h-4 text-emerald-300" />
                   <span>Tersalin!</span>
                 </>
               ) : (
                 <>
-                  <Copy className="w-4 h-4" />
+                  <Copy className="w-4 h-4 text-blue-200" />
                   <span>Salin Rekap Teks</span>
                 </>
               )}
@@ -656,24 +689,24 @@ export const SplitBillScreen: React.FC = () => {
 
             <button
               onClick={handleShare}
-              className="h-11 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-sm shadow-emerald-500/30"
+              className="h-12 rounded-2xl bg-white hover:bg-sky-50 text-blue-700 text-xs font-black flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-black/10"
             >
-              <Share2 className="w-4 h-4" />
-              <span>Bagikan Hasil Tagihan</span>
+              <Share2 className="w-4 h-4 text-blue-600" />
+              <span>Bagikan Tagihan</span>
             </button>
           </div>
         </div>
       ) : (
-        <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-300">
+        <div className="p-5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs font-semibold text-amber-800 dark:text-amber-300">
           Masukkan subtotal dan minimal satu peserta untuk melihat hasil pembagian tagihan.
         </div>
       )}
 
-      {/* Info Notice */}
-      <div className="p-3.5 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-start gap-2.5 text-xs text-slate-500 dark:text-slate-400">
-        <Info className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
-        <p>
-          <strong className="text-slate-700 dark:text-slate-300">Catatan Independen:</strong> Kalkulator ini adalah alat bantu hitung murni dan tidak otomatis mencatat ke pengeluaran pribadi Anda pada versi ini.
+      {/* Info Notice: Clean Sky Blue Tint */}
+      <div className="p-4 rounded-2xl bg-sky-50/70 dark:bg-sky-950/30 border border-sky-100 dark:border-sky-900/60 flex items-start gap-3 text-xs text-sky-800 dark:text-sky-300">
+        <Info className="w-4 h-4 text-sky-500 shrink-0 mt-0.5" />
+        <p className="leading-relaxed">
+          <strong className="text-sky-950 dark:text-sky-200">Catatan Independen:</strong> Kalkulator ini adalah alat bantu hitung murni dan tidak otomatis mencatat ke pengeluaran pribadi Anda pada versi ini.
         </p>
       </div>
     </div>

@@ -1,6 +1,5 @@
-const CACHE_NAME = 'catatcepat-cache-v1';
+const CACHE_NAME = 'tabsy-cache-v2';
 const STATIC_ASSETS = [
-  '/',
   '/manifest.webmanifest',
   '/favicon.ico',
 ];
@@ -15,7 +14,7 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// Activate: Clean up old caches while leaving IndexedDB untouched
+// Activate: Clean up old caches immediately
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
@@ -31,39 +30,40 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch: Stale-while-revalidate for static assets, network-first for pages
+// Fetch: Strictly Network-First for all HTML and dynamic code
 self.addEventListener('fetch', (event) => {
   // Only handle GET requests and http/https schemes
   if (event.request.method !== 'GET' || !event.request.url.startsWith('http')) {
     return;
   }
 
-  // Do not intercept or cache any external AI API endpoints
+  // Do not intercept API requests
   if (event.request.url.includes('/api/')) {
     return;
   }
 
+  // Network-first strategy for freshness
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      const fetchPromise = fetch(event.request)
-        .then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
-            const responseToCache = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseToCache);
-            });
-          }
-          return networkResponse;
-        })
-        .catch(() => {
-          // If offline and request is HTML page, return root cached response
+    fetch(event.request)
+      .then((networkResponse) => {
+        // Clone and cache successful responses
+        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
+        }
+        return networkResponse;
+      })
+      .catch(() => {
+        // Only fall back to cache when offline
+        return caches.match(event.request).then((cached) => {
+          if (cached) return cached;
           if (event.request.headers.get('accept')?.includes('text/html')) {
             return caches.match('/');
           }
-          return cachedResponse;
+          return new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
         });
-
-      return cachedResponse || fetchPromise;
-    })
+      })
   );
 });

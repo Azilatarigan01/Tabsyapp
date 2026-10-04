@@ -89,7 +89,7 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50/60 dark:bg-slate-950 pb-24 text-slate-900 dark:text-slate-100 font-sans">
+    <div className="min-h-screen flex flex-col bg-slate-50/60 dark:bg-slate-950 pb-40 text-slate-900 dark:text-slate-100 font-sans">
       {/* Top Header & Floating Bottom Nav */}
       <Navigation
         activeTab={activeTab}
