@@ -6,6 +6,7 @@ export interface QuickParseResult {
   amountRupiah: number | null;
   suggestedCategory?: ExpenseCategory;
   isValid: boolean;
+  ambiguousReason?: string;
 }
 
 const CATEGORY_KEYWORDS: Record<ExpenseCategory, string[]> = {
@@ -26,7 +27,7 @@ export function suggestCategory(description: string): ExpenseCategory {
       return category as ExpenseCategory;
     }
   }
-  return 'makan'; // Default category for quick expenses if unspecified
+  return 'makan';
 }
 
 export function parseQuickInput(input: string): QuickParseResult {
@@ -35,68 +36,97 @@ export function parseQuickInput(input: string): QuickParseResult {
     return { raw: input, description: '', amountRupiah: null, isValid: false };
   }
 
-  // Regex patterns to capture amounts with k, rb, ribu, jt, juta, or plain numbers
-  // Examples: "25k", "25.5k", "5rb", "5 ribu", "25000", "25.000", "1.5jt"
-  // Look for amount at the end or anywhere with suffix
-  const patterns = [
-    // Number with suffix: 25k, 25.5k, 5rb, 5 ribu, 1.5jt, 2 juta
-    /(?:^|\s)(\d+(?:[.,]\d+)?)\s*(k|rb|ribu|jt|juta)(?:\s|$)/i,
-    // Formatted rupiah like 25.000 or 150.000
-    /(?:^|\s)(?:rp\.?\s*)?(\d{1,3}(?:\.\d{3})+)(?:\s|$)/i,
-    // Plain number like 25000 or 5000 (at least 3 digits or explicitly standalone number)
-    /(?:^|\s)(?:rp\.?\s*)?(\d{3,9})(?:\s|$)/i,
-    // Smaller plain numbers at end: e.g. "parkir 2000" or "permen 500"
-    /(?:^|\s)(?:rp\.?\s*)?(\d+)(?:\s|$)/i,
-  ];
+  // Check for ambiguous pattern: numbers with only 1 or 2 digits after dot without suffix (e.g. 25.00 or 25.5 without k)
+  // Indonesian thousands separator requires groups of 3 digits: e.g. 25.000 or 1.500.000
+  const ambiguousDecimalDot = /(?:^|\s)(\d+\.\d{1,2})(?:\s|$)(?!k|rb|ribu|jt|juta)/i;
+  if (ambiguousDecimalDot.test(trimmed)) {
+    return {
+      raw: input,
+      description: trimmed,
+      amountRupiah: null,
+      isValid: false,
+      ambiguousReason: 'Format nominal ambigu (separator ribuan harus 3 digit, contoh: 25.000 atau 25k).',
+    };
+  }
 
-  let detectedAmount: number | null = null;
-  let remainingText = trimmed;
+  // Regex patterns to capture amounts
+  // 1. With suffix: 25k, 25.5k, 25,5k, 5rb, 5 ribu, 1.5jt
+  const suffixPattern = /(?<=\s|^)(?:rp\.?\s*)?(\d+(?:[.,]\d+)?)\s*(k|rb|ribu|jt|juta)(?=\s|$)/gi;
+  // 2. Formatted thousands: 25.000, 150.000, 1.000.000
+  const thousandsPattern = /(?<=\s|^)(?:rp\.?\s*)?(\d{1,3}(?:\.\d{3})+)(?=\s|$)/gi;
+  // 3. Plain standalone integer (3 to 9 digits): 25000, 5000, 500
+  const plainIntPattern = /(?<=\s|^)(?:rp\.?\s*)?(\b\d{3,9}\b)(?=\s|$)/gi;
 
-  for (const pattern of patterns) {
-    const match = trimmed.match(pattern);
-    if (match) {
-      const fullMatch = match[0];
-      const suffix = (match[2] || '').toLowerCase();
-      let numStr = match[1];
-      if (suffix) {
-        // Decimal with suffix: 18.5k or 18,5k -> 18.5
-        numStr = numStr.replace(',', '.');
-      } else {
-        // Thousands separator without suffix: 25.000 -> 25000
-        numStr = numStr.replace(/\./g, '').replace(',', '.');
-      }
+  const detectedMatches: { rawMatch: string; value: number }[] = [];
 
-      let val = parseFloat(numStr);
-      if (isNaN(val)) continue;
-
-      if (suffix === 'k' || suffix === 'rb' || suffix === 'ribu') {
-        val = Math.round(val * 1000);
-      } else if (suffix === 'jt' || suffix === 'juta') {
-        val = Math.round(val * 1000000);
-      } else {
-        val = Math.round(val);
-      }
-
+  // Match suffixes
+  let m: RegExpExecArray | null;
+  while ((m = suffixPattern.exec(trimmed)) !== null) {
+    const rawMatch = m[0];
+    let numStr = m[1].replace(',', '.');
+    const suffix = (m[2] || '').toLowerCase();
+    let val = parseFloat(numStr);
+    if (!isNaN(val)) {
+      if (suffix === 'k' || suffix === 'rb' || suffix === 'ribu') val = Math.round(val * 1000);
+      else if (suffix === 'jt' || suffix === 'juta') val = Math.round(val * 1000000);
       if (val > 0 && Number.isSafeInteger(val) && val <= 1000000000) {
-        detectedAmount = val;
-        // Remove the matched amount token from description
-        remainingText = (trimmed.slice(0, match.index!) + ' ' + trimmed.slice(match.index! + fullMatch.length)).trim();
-        // Clean up double spaces
-        remainingText = remainingText.replace(/\s+/g, ' ');
-        break;
+        detectedMatches.push({ rawMatch, value: val });
       }
     }
   }
 
-  // If no remaining text, description might be empty
-  const description = remainingText.slice(0, 100).trim();
-  const suggested = description ? suggestCategory(description) : undefined;
+  // Match formatted thousands (only if no suffix match already)
+  if (detectedMatches.length === 0) {
+    while ((m = thousandsPattern.exec(trimmed)) !== null) {
+      const rawMatch = m[0];
+      const numStr = m[1].replace(/\./g, '');
+      const val = parseInt(numStr, 10);
+      if (!isNaN(val) && val > 0 && Number.isSafeInteger(val) && val <= 1000000000) {
+        detectedMatches.push({ rawMatch, value: val });
+      }
+    }
+  }
+
+  // Match plain integers (only if no matches yet)
+  if (detectedMatches.length === 0) {
+    while ((m = plainIntPattern.exec(trimmed)) !== null) {
+      const rawMatch = m[0];
+      const val = parseInt(m[1], 10);
+      if (!isNaN(val) && val > 0 && Number.isSafeInteger(val) && val <= 1000000000) {
+        detectedMatches.push({ rawMatch, value: val });
+      }
+    }
+  }
+
+  // Reject ambiguous inputs with multiple distinct amounts (e.g. "kopi 25k 30k")
+  if (detectedMatches.length > 1) {
+    const values = new Set(detectedMatches.map((d) => d.value));
+    if (values.size > 1) {
+      return {
+        raw: input,
+        description: trimmed,
+        amountRupiah: null,
+        isValid: false,
+        ambiguousReason: 'Terdapat lebih dari satu nominal dalam satu input. Harap masukkan satu transaksi.',
+      };
+    }
+  }
+
+  if (detectedMatches.length === 0) {
+    return { raw: input, description: trimmed, amountRupiah: null, isValid: false };
+  }
+
+  const chosen = detectedMatches[0];
+  let remainingText = trimmed.replace(chosen.rawMatch, ' ').trim();
+  remainingText = remainingText.replace(/\s+/g, ' ').slice(0, 100);
+
+  const suggested = remainingText ? suggestCategory(remainingText) : undefined;
 
   return {
     raw: input,
-    description,
-    amountRupiah: detectedAmount,
+    description: remainingText,
+    amountRupiah: chosen.value,
     suggestedCategory: suggested,
-    isValid: Boolean(description && detectedAmount && detectedAmount > 0),
+    isValid: Boolean(remainingText && chosen.value > 0),
   };
 }

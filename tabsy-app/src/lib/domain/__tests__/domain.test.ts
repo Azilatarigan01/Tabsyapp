@@ -2,13 +2,20 @@ import { describe, it, expect } from 'vitest';
 import { parseQuickInput, suggestCategory } from '../parser';
 import { calculateSplitBill, formatRupiah } from '../calculator';
 
-describe('Domain: Quick Input Parser (F02)', () => {
+describe('Domain: Quick Input Parser (F02 & Tahap 5)', () => {
   it('parses "kopi 25k" correctly', () => {
     const result = parseQuickInput('kopi 25k');
     expect(result.isValid).toBe(true);
     expect(result.description.toLowerCase()).toBe('kopi');
     expect(result.amountRupiah).toBe(25000);
     expect(result.suggestedCategory).toBe('makan');
+  });
+
+  it('parses comma decimal "kopi 25,5k" correctly', () => {
+    const result = parseQuickInput('kopi 25,5k');
+    expect(result.isValid).toBe(true);
+    expect(result.description.toLowerCase()).toBe('kopi');
+    expect(result.amountRupiah).toBe(25500);
   });
 
   it('parses "nasi 25000" correctly', () => {
@@ -35,14 +42,35 @@ describe('Domain: Quick Input Parser (F02)', () => {
     expect(result.suggestedCategory).toBe('transport');
   });
 
-  it('handles decimal "kopi 18.5k"', () => {
+  it('handles decimal dot with k "kopi 18.5k"', () => {
     const result = parseQuickInput('kopi 18.5k');
     expect(result.isValid).toBe(true);
     expect(result.amountRupiah).toBe(18500);
   });
+
+  it('rejects ambiguous numbers like "25.00" without 3-digit thousands group', () => {
+    const result = parseQuickInput('kopi 25.00');
+    expect(result.isValid).toBe(false);
+    expect(result.amountRupiah).toBeNull();
+    expect(result.ambiguousReason).toBeDefined();
+  });
+
+  it('rejects ambiguous inputs with two competing amounts like "kopi 25k 30k"', () => {
+    const result = parseQuickInput('kopi 25k 30k');
+    expect(result.isValid).toBe(false);
+    expect(result.amountRupiah).toBeNull();
+    expect(result.ambiguousReason).toBeDefined();
+  });
+
+  it('handles extra whitespace and mixed casing gracefully', () => {
+    const result = parseQuickInput('   KOPI   SUSU   25K   ');
+    expect(result.isValid).toBe(true);
+    expect(result.amountRupiah).toBe(25000);
+    expect(result.description).toBe('KOPI SUSU');
+  });
 });
 
-describe('Domain: Split Bill Calculator (F05)', () => {
+describe('Domain: Split Bill Calculator (F05 & Tahap 6)', () => {
   it('PRD Acceptance Test: Rp100.000 subtotal, 10% tax, 5% service, 3 participants', () => {
     const result = calculateSplitBill({
       subtotal: 100000,
@@ -71,6 +99,22 @@ describe('Domain: Split Bill Calculator (F05)', () => {
 
     expect(result.shares[2].name).toBe('C');
     expect(result.shares[2].finalAmount).toBe(38333);
+  });
+
+  it('handles zero tax and service correctly', () => {
+    const result = calculateSplitBill({
+      subtotal: 90000,
+      taxType: 'percent',
+      taxValue: 0,
+      serviceType: 'percent',
+      serviceValue: 0,
+      participants: ['X', 'Y', 'Z'],
+    });
+
+    expect(result.total).toBe(90000);
+    expect(result.shares[0].finalAmount).toBe(30000);
+    expect(result.shares[1].finalAmount).toBe(30000);
+    expect(result.shares[2].finalAmount).toBe(30000);
   });
 
   it('formats Rupiah correctly', () => {

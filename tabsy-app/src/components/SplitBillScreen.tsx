@@ -246,6 +246,26 @@ export const SplitBillScreen: React.FC = () => {
     setTimeout(() => setCopied(false), 2500);
   };
 
+  const handleShare = async () => {
+    const text = generateShareText();
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Rekap Patungan Makan - CatatCepat',
+          text,
+        });
+        return;
+      } catch (err) {
+        // User dismissed or aborted share dialog
+        if ((err as Error).name !== 'AbortError') {
+          handleShareWhatsApp();
+        }
+        return;
+      }
+    }
+    handleShareWhatsApp();
+  };
+
   const handleShareWhatsApp = () => {
     const text = encodeURIComponent(generateShareText());
     window.open(`https://wa.me/?text=${text}`, '_blank');
@@ -635,11 +655,11 @@ export const SplitBillScreen: React.FC = () => {
             </button>
 
             <button
-              onClick={handleShareWhatsApp}
+              onClick={handleShare}
               className="h-11 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-sm shadow-emerald-500/30"
             >
               <Share2 className="w-4 h-4" />
-              <span>Kirim ke WhatsApp</span>
+              <span>Bagikan Hasil Tagihan</span>
             </button>
           </div>
         </div>

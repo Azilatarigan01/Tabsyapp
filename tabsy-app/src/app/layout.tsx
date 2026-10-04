@@ -31,6 +31,8 @@ export const viewport: Viewport = {
   themeColor: "#0f172a",
 };
 
+import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -42,6 +44,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 font-sans selection:bg-emerald-500 selection:text-white">
+        <ServiceWorkerRegister />
         {children}
       </body>
     </html>

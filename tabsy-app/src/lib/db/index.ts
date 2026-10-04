@@ -171,20 +171,22 @@ export interface ImportResult {
  * Import transactions while skipping existing duplicate IDs
  */
 export async function importTransactions(incoming: Transaction[]): Promise<ImportResult> {
-  let added = 0;
-  let skipped = 0;
+  return await db.transaction('rw', db.transactions, async () => {
+    let added = 0;
+    let skipped = 0;
 
-  for (const item of incoming) {
-    const existing = await db.transactions.get(item.id);
-    if (existing) {
-      skipped++;
-    } else {
-      await db.transactions.add(item);
-      added++;
+    for (const item of incoming) {
+      const existing = await db.transactions.get(item.id);
+      if (existing) {
+        skipped++;
+      } else {
+        await db.transactions.add(item);
+        added++;
+      }
     }
-  }
 
-  return { added, skipped, totalInFile: incoming.length };
+    return { added, skipped, totalInFile: incoming.length };
+  });
 }
 
 /**
