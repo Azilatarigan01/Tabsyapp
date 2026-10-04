@@ -218,6 +218,25 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
     setErrorMessage(null);
   };
 
+  const handleSelectSampleReceiptImage = async (imagePath: string) => {
+    try {
+      setErrorMessage(null);
+      setIsHeicOrPdf(false);
+      setParsedResult(null);
+      setRotation(0);
+
+      const res = await fetch(imagePath);
+      const blob = await res.blob();
+      const filename = imagePath.split('/').pop() || 'sample.jpg';
+      const file = new File([blob], filename, { type: 'image/jpeg' });
+      setSelectedFile(file);
+      setPreviewDataUrl(imagePath);
+    } catch (err) {
+      console.error('Error loading sample receipt image:', err);
+      setErrorMessage('Gagal memuat gambar struk contoh.');
+    }
+  };
+
   const handleAddItem = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newItemName.trim() || !newItemPrice || Number(newItemPrice) <= 0) return;
@@ -743,6 +762,51 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
                           className="w-full h-8 px-2 text-xs font-bold rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200"
                         />
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Real Sample Receipts Gallery (SROIE & Indonesian Benchmark) */}
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+                        Pilih Contoh Foto Struk Asli (CORD & SROIE Dataset):
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {[
+                        { title: 'Kopi Kenangan', sub: 'Rp42.000', file: '/sample-receipts/receipt_kopi_kenangan.jpg', tag: 'Kafe' },
+                        { title: 'Mie Gacoan', sub: 'Rp47.300 (PB1)', file: '/sample-receipts/receipt_mie_gacoan.jpg', tag: 'Resto' },
+                        { title: 'Janji Jiwa', sub: 'Rp47.000 (Promo)', file: '/sample-receipts/receipt_janji_jiwa.jpg', tag: 'Diskon' },
+                        { title: 'Indah Gift', sub: 'SROIE Dataset', file: '/sample-receipts/receipt_indah.jpg', tag: 'Fisik' },
+                      ].map((sample) => (
+                        <button
+                          key={sample.file}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSelectSampleReceiptImage(sample.file);
+                          }}
+                          className="p-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/60 hover:bg-blue-50/60 hover:border-blue-400 dark:hover:border-blue-700 text-left transition-all group flex flex-col justify-between shadow-sm active:scale-95"
+                        >
+                          <div>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-sky-300 border border-blue-100 dark:border-blue-900">
+                                {sample.tag}
+                              </span>
+                            </div>
+                            <p className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-sky-400">
+                              {sample.title}
+                            </p>
+                            <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-0.5">
+                              {sample.sub}
+                            </p>
+                          </div>
+                          <span className="text-[10px] font-bold text-blue-600 dark:text-sky-400 mt-2.5 flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+                            Pilih Foto →
+                          </span>
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>
