@@ -4,7 +4,7 @@ import React, { useState, useRef } from 'react';
 import { Transaction, UserProfile, DEFAULT_AVATARS } from '@/types';
 import { exportTransactionsToCSV } from '@/lib/export/csv';
 import { generateBackupJSON, parseAndValidateBackup } from '@/lib/export/backup';
-import { importTransactions, clearAllTransactions } from '@/lib/db';
+import { importTransactions, clearAllTransactions, getAllBillDrafts, saveBillDraft } from '@/lib/db';
 import { formatRupiah } from '@/lib/domain/calculator';
 import {
   User,

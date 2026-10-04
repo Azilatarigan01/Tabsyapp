@@ -172,6 +172,8 @@ export const SplitBillScreen: React.FC = () => {
       await deleteBillDraft(id);
       await refreshDrafts();
     }
+  };
+
   const handleStartNewDraft = () => {
     setDraft(createDefaultBillDraft('Saya'));
   };
@@ -1082,7 +1084,8 @@ export const SplitBillScreen: React.FC = () => {
                 );
               })}
             </div>
-          </div>
+          )}
+        </div>
 
           {/* Pre-Tax Discount & Fee Settings Card */}
           <div className="bg-white dark:bg-slate-900 p-6 rounded-[28px] border border-blue-50/80 dark:border-slate-800 shadow-[0_8px_30px_rgba(30,58,138,0.04)] space-y-4">
