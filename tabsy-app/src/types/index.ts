@@ -81,3 +81,89 @@ export interface SplitBillResult {
   total: number;
   shares: ParticipantShare[];
 }
+
+// ==========================================
+// TAHAP 10: PERLUASAN DATA & MODUL PER ITEM
+// ==========================================
+
+export interface Participant {
+  id: string;
+  name: string;
+}
+
+export interface BillItem {
+  id: string;
+  name: string;
+  price: number; // Unit price or line price
+  quantity: number; // Positive integer (defaults to 1)
+  assignedParticipantIds: string[]; // Participants sharing this item (positive shares)
+}
+
+export interface Payment {
+  id: string;
+  participantId: string;
+  amountPaid: number; // Integer >= 0
+  note?: string;
+  paidAt: string; // ISO 8601
+}
+
+export interface BillDraft {
+  id: string; // UUID v4
+  title: string;
+  date: string; // YYYY-MM-DD
+  items: BillItem[];
+  participants: Participant[];
+  discountAmount: number; // Nominal discount applied before tax & service
+  taxType: FeeInputType;
+  taxValue: number;
+  serviceType: FeeInputType;
+  serviceValue: number;
+  payments: Payment[];
+  isFinalized: boolean;
+  createdAt: string; // ISO 8601
+  updatedAt: string; // ISO 8601
+}
+
+export interface ParticipantItemBreakdown {
+  participantId: string;
+  participantName: string;
+  rawItemSubtotal: number;
+  allocatedDiscount: number;
+  discountedSubtotal: number;
+  allocatedTax: number;
+  allocatedService: number;
+  finalShareAmount: number;
+  totalPaid: number;
+  balance: number; // finalShareAmount - totalPaid (positive = owes money, negative = overpaid/change, 0 = settled)
+  isSettled: boolean;
+}
+
+export interface SettlementTransfer {
+  fromParticipantId: string;
+  fromParticipantName: string;
+  toParticipantId: string;
+  toParticipantName: string;
+  amount: number;
+}
+
+export interface ItemSplitCalculationResult {
+  grossSubtotal: number;
+  discountAmount: number;
+  netSubtotal: number;
+  taxAmount: number;
+  serviceAmount: number;
+  totalBill: number;
+  totalPayments: number;
+  paymentDifference: number; // totalBill - totalPayments (0 means fully settled)
+  isFullyPaid: boolean;
+  participantBreakdowns: ParticipantItemBreakdown[];
+  settlementTransfers: SettlementTransfer[];
+}
+
+export interface BackupDataV2 {
+  formatVersion: 2;
+  exportedAt: string; // ISO 8601
+  transactions: Transaction[];
+  userProfile?: UserProfile;
+  billDrafts: BillDraft[];
+}

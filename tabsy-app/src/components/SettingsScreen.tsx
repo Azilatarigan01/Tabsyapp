@@ -73,12 +73,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     exportTransactionsToCSV(transactions);
   };
 
-  const handleBackupFile = () => {
-    if (transactions.length === 0) {
-      alert('Belum ada data untuk dicadangkan.');
-      return;
+  const handleBackupFile = async () => {
+    try {
+      const drafts = await getAllBillDrafts();
+      if (transactions.length === 0 && drafts.length === 0) {
+        alert('Belum ada data untuk dicadangkan.');
+        return;
+      }
+      generateBackupJSON(transactions, drafts, userProfile);
+    } catch {
+      generateBackupJSON(transactions, [], userProfile);
     }
-    generateBackupJSON(transactions);
   };
 
   const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -110,7 +115,23 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
     setIsProcessing(true);
     try {
+      // 1. Restore transactions
       const report = await importTransactions(restoreCandidate.transactions);
+
+      // 2. Restore bill drafts if present
+      let draftsRestored = 0;
+      if (Array.isArray(restoreCandidate.billDrafts)) {
+        for (const draft of restoreCandidate.billDrafts) {
+          await saveBillDraft(draft);
+          draftsRestored++;
+        }
+      }
+
+      // 3. Restore user profile if present
+      if (restoreCandidate.userProfile) {
+        onUpdateProfile(restoreCandidate.userProfile);
+      }
+
       setRestoreReport({ added: report.added, skipped: report.skipped });
       setRestoreCandidate(null);
       onTransactionsChanged();

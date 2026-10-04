@@ -1,14 +1,23 @@
 import Dexie, { type EntityTable } from 'dexie';
-import { Transaction, ExpenseCategory } from '@/types';
+import { Transaction, ExpenseCategory, BillDraft } from '@/types';
 import { MAX_SAFE_NOMINAL } from '@/lib/domain/calculator';
 
 export class CatatCepatDatabase extends Dexie {
   transactions!: EntityTable<Transaction, 'id'>;
+  billDrafts!: EntityTable<BillDraft, 'id'>;
 
   constructor() {
     super('CatatCepatDB');
     this.version(1).stores({
       transactions: 'id, date, category, createdAt',
+    });
+
+    // Version 2 Migration: Add billDrafts store for item-level bills & receipt splits
+    this.version(2).stores({
+      transactions: 'id, date, category, createdAt',
+      billDrafts: 'id, date, title, isFinalized, updatedAt',
+    }).upgrade((tx) => {
+      // Preserve existing data without modification
     });
   }
 }
@@ -238,3 +247,82 @@ export async function seedSampleData(): Promise<number> {
 
   return created.length;
 }
+
+// ==========================================
+// TAHAP 10: BILL DRAFT REPOSITORY OPERATIONS
+// ==========================================
+
+export function createDefaultBillDraft(): BillDraft {
+  const now = new Date().toISOString();
+  return {
+    id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `draft-${Date.now()}`,
+    title: 'Makan Bareng',
+    date: getLocalTodayDate(),
+    participants: [
+      { id: 'p-1', name: 'Asep' },
+      { id: 'p-2', name: 'Budi' },
+      { id: 'p-3', name: 'Citra' },
+    ],
+    items: [
+      { id: 'it-1', name: 'Nasi Goreng Spesial', price: 28000, quantity: 1, assignedParticipantIds: ['p-1'] },
+      { id: 'it-2', name: 'Steak Ayam BBQ', price: 45000, quantity: 1, assignedParticipantIds: ['p-2'] },
+      { id: 'it-3', name: 'Es Teh Manis', price: 5000, quantity: 3, assignedParticipantIds: ['p-1', 'p-2', 'p-3'] },
+    ],
+    discountAmount: 0,
+    taxType: 'percent',
+    taxValue: 10,
+    serviceType: 'percent',
+    serviceValue: 5,
+    payments: [],
+    isFinalized: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/**
+ * Save or update a BillDraft in IndexedDB
+ */
+export async function saveBillDraft(draft: BillDraft): Promise<BillDraft> {
+  const updated: BillDraft = {
+    ...draft,
+    updatedAt: new Date().toISOString(),
+  };
+
+  try {
+    await db.billDrafts.put(updated);
+    return updated;
+  } catch (error) {
+    console.error('Gagal menyimpan draft tagihan ke IndexedDB:', error);
+    throw new Error('Gagal menyimpan draft tagihan di penyimpanan lokal browser.');
+  }
+}
+
+/**
+ * Get bill draft by ID
+ */
+export async function getBillDraftById(id: string): Promise<BillDraft | undefined> {
+  return await db.billDrafts.get(id);
+}
+
+/**
+ * Retrieve all bill drafts sorted by updatedAt (descending)
+ */
+export async function getAllBillDrafts(): Promise<BillDraft[]> {
+  return await db.billDrafts.orderBy('updatedAt').reverse().toArray();
+}
+
+/**
+ * Delete a bill draft by ID
+ */
+export async function deleteBillDraft(id: string): Promise<void> {
+  await db.billDrafts.delete(id);
+}
+
+/**
+ * Clear all bill drafts
+ */
+export async function clearAllBillDrafts(): Promise<void> {
+  await db.billDrafts.clear();
+}
+
