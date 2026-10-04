@@ -130,7 +130,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-5 space-y-5">
+    <div className="max-w-md mx-auto px-4 py-4 space-y-4">
       {/* User Profile Card (Matching Neo-banking Reference) */}
       <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5 shadow-sm space-y-4">
         <div className="flex items-center justify-between">

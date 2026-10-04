@@ -272,7 +272,7 @@ export const SplitBillScreen: React.FC = () => {
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
+    <div className="max-w-md mx-auto px-4 py-4 space-y-4">
       {/* Header */}
       <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
         <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">

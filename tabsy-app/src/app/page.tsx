@@ -115,6 +115,7 @@ export default function Home() {
                 userProfile={userProfile}
                 monthTotal={monthTotal}
                 todayTotal={todayTotal}
+                onNavigateTab={setActiveTab}
               />
             )}
             {activeTab === 'riwayat' && (
