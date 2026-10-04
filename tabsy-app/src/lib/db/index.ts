@@ -252,11 +252,33 @@ export async function seedSampleData(): Promise<number> {
 // TAHAP 10: BILL DRAFT REPOSITORY OPERATIONS
 // ==========================================
 
-export function createDefaultBillDraft(): BillDraft {
+export function createDefaultBillDraft(defaultUserName = 'Saya'): BillDraft {
   const now = new Date().toISOString();
   return {
     id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `draft-${Date.now()}`,
     title: 'Makan Bareng',
+    date: getLocalTodayDate(),
+    participants: [
+      { id: 'p-1', name: defaultUserName },
+    ],
+    items: [],
+    discountAmount: 0,
+    taxType: 'percent',
+    taxValue: 10,
+    serviceType: 'percent',
+    serviceValue: 5,
+    payments: [],
+    isFinalized: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function createSampleBillDraft(): BillDraft {
+  const now = new Date().toISOString();
+  return {
+    id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `draft-${Date.now()}`,
+    title: 'Makan Malam Seafood',
     date: getLocalTodayDate(),
     participants: [
       { id: 'p-1', name: 'Asep' },
@@ -268,7 +290,7 @@ export function createDefaultBillDraft(): BillDraft {
       { id: 'it-2', name: 'Steak Ayam BBQ', price: 45000, quantity: 1, assignedParticipantIds: ['p-2'] },
       { id: 'it-3', name: 'Es Teh Manis', price: 5000, quantity: 3, assignedParticipantIds: ['p-1', 'p-2', 'p-3'] },
     ],
-    discountAmount: 0,
+    discountAmount: 10000,
     taxType: 'percent',
     taxValue: 10,
     serviceType: 'percent',

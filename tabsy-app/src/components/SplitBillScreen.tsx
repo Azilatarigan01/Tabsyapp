@@ -14,6 +14,7 @@ import {
   getAllBillDrafts,
   deleteBillDraft,
   createDefaultBillDraft,
+  createSampleBillDraft,
   getLocalTodayDate,
 } from '@/lib/db';
 import {
@@ -48,6 +49,7 @@ import {
   Sparkles,
   Layers,
   ChevronRight,
+  RotateCcw,
 } from 'lucide-react';
 
 export const SplitBillScreen: React.FC = () => {
@@ -55,22 +57,22 @@ export const SplitBillScreen: React.FC = () => {
   const [splitMode, setSplitMode] = useState<'rata' | 'item'>('rata');
 
   // ==========================================
-  // MODE 1: BAGI RATA (SIMPLE) STATE
+  // MODE 1: BAGI RATA (SIMPLE) STATE (Start Clean!)
   // ==========================================
-  const [subtotalSimple, setSubtotalSimple] = useState<number | ''>(100000);
+  const [subtotalSimple, setSubtotalSimple] = useState<number | ''>('');
   const [hasTaxSimple, setHasTaxSimple] = useState(true);
   const [hasServiceSimple, setHasServiceSimple] = useState(true);
   const [taxTypeSimple, setTaxTypeSimple] = useState<FeeInputType>('percent');
   const [taxValueSimple, setTaxValueSimple] = useState<number | ''>(10);
   const [serviceTypeSimple, setServiceTypeSimple] = useState<FeeInputType>('percent');
   const [serviceValueSimple, setServiceValueSimple] = useState<number | ''>(5);
-  const [participantsSimple, setParticipantsSimple] = useState<string[]>(['Asep', 'Budi', 'Citra']);
+  const [participantsSimple, setParticipantsSimple] = useState<string[]>(['Saya']);
   const [newParticipantSimple, setNewParticipantSimple] = useState('');
 
   // ==========================================
-  // MODE 2: TAHAP 10 ITEM SPLIT & DRAFT STATE
+  // MODE 2: TAHAP 10 ITEM SPLIT & DRAFT STATE (Start Clean!)
   // ==========================================
-  const [draft, setDraft] = useState<BillDraft>(createDefaultBillDraft());
+  const [draft, setDraft] = useState<BillDraft>(createDefaultBillDraft('Saya'));
   const [savedDrafts, setSavedDrafts] = useState<BillDraft[]>([]);
   const [showDraftsModal, setShowDraftsModal] = useState(false);
   const [draftSaveStatus, setDraftSaveStatus] = useState<string | null>(null);
@@ -170,10 +172,21 @@ export const SplitBillScreen: React.FC = () => {
       await deleteBillDraft(id);
       await refreshDrafts();
     }
+  const handleStartNewDraft = () => {
+    setDraft(createDefaultBillDraft('Saya'));
   };
 
-  const handleStartNewDraft = () => {
-    setDraft(createDefaultBillDraft());
+  const handleLoadDemoSimple = () => {
+    setSubtotalSimple(100000);
+    setParticipantsSimple(['Asep', 'Budi', 'Citra']);
+    setHasTaxSimple(true);
+    setHasServiceSimple(true);
+    setTaxValueSimple(10);
+    setServiceValueSimple(5);
+  };
+
+  const handleLoadDemoItem = () => {
+    setDraft(createSampleBillDraft());
   };
 
   // Participant management for Mode 2
@@ -446,31 +459,31 @@ export const SplitBillScreen: React.FC = () => {
           Hitung patungan makan adil tanpa selisih senilai 1 rupiah pun. Mendukung diskon promo sebelum pajak & biaya servis, alokasi item pesanan, dan saldo pelunasan transfer.
         </p>
 
-        {/* Mode Selector Capsule */}
-        <div className="flex p-1.5 rounded-2xl bg-slate-100/80 dark:bg-slate-800/80 text-xs font-bold gap-1">
+        {/* Mode Selector Capsule: Symmetrical, Crisp, No-Wrap */}
+        <div className="grid grid-cols-2 p-1.5 rounded-2xl bg-slate-100/90 dark:bg-slate-800/90 text-xs font-bold gap-1.5 shadow-inner">
           <button
             type="button"
             onClick={() => setSplitMode('rata')}
-            className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+            className={`h-11 px-3 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 whitespace-nowrap ${
               splitMode === 'rata'
-                ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-sky-400 shadow-sm font-extrabold'
-                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+                ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-sky-400 shadow-sm font-black ring-1 ring-black/5 dark:ring-white/10'
+                : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 font-semibold'
             }`}
           >
-            <Users className="w-3.5 h-3.5" />
-            1. Bagi Rata (Simple)
+            <Users className="w-4 h-4 shrink-0 text-blue-600 dark:text-sky-400" />
+            <span>1. Bagi Rata</span>
           </button>
           <button
             type="button"
             onClick={() => setSplitMode('item')}
-            className={`flex-1 py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+            className={`h-11 px-3 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 whitespace-nowrap ${
               splitMode === 'item'
-                ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-sky-400 shadow-sm font-extrabold'
-                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+                ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-sky-400 shadow-sm font-black ring-1 ring-black/5 dark:ring-white/10'
+                : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 font-semibold'
             }`}
           >
-            <UtensilsCrossed className="w-3.5 h-3.5" />
-            2. Beda Menu & Pelunasan
+            <UtensilsCrossed className="w-4 h-4 shrink-0 text-blue-600 dark:text-sky-400" />
+            <span>2. Beda Menu</span>
           </button>
         </div>
       </div>
@@ -493,11 +506,17 @@ export const SplitBillScreen: React.FC = () => {
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
                 <Users className="w-4 h-4 text-blue-600" />
-                Daftar Peserta
+                Daftar Peserta ({participantsSimple.length} Orang)
               </label>
-              <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-sky-400 border border-blue-100 dark:border-blue-900">
-                {participantsSimple.length} Orang
-              </span>
+              <button
+                type="button"
+                onClick={handleLoadDemoSimple}
+                className="text-[11px] font-bold text-blue-600 hover:text-blue-700 dark:text-sky-400 flex items-center gap-1 hover:underline"
+                title="Isi contoh 3 peserta dan Rp100.000 untuk simulasi"
+              >
+                <Sparkles className="w-3 h-3" />
+                Contoh Demo
+              </button>
             </div>
 
             <form
@@ -868,9 +887,20 @@ export const SplitBillScreen: React.FC = () => {
                   Menu Pesanan ({draft.items.length} Item)
                 </h3>
               </div>
-              <span className="text-xs font-black text-blue-600 dark:text-sky-400">
-                Kotor: {formatRupiah(calculationItem.grossSubtotal)}
-              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleLoadDemoItem}
+                  className="text-[11px] font-bold text-blue-600 hover:text-blue-700 dark:text-sky-400 flex items-center gap-1 hover:underline"
+                  title="Muat 3 menu contoh untuk simulasi"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  Contoh Demo
+                </button>
+                <span className="text-xs font-black text-blue-600 dark:text-sky-400">
+                  Kotor: {formatRupiah(calculationItem.grossSubtotal)}
+                </span>
+              </div>
             </div>
 
             {/* Form Tambah Item Menu */}
@@ -948,8 +978,32 @@ export const SplitBillScreen: React.FC = () => {
               </button>
             </form>
 
-            {/* List Items */}
-            <div className="space-y-2.5">
+            {/* Empty State when no items added yet */}
+            {draft.items.length === 0 ? (
+              <div className="p-6 rounded-2xl bg-blue-50/40 dark:bg-slate-800/40 border border-blue-100 dark:border-slate-800 text-center space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 shadow-sm flex items-center justify-center mx-auto text-blue-500">
+                  <UtensilsCrossed className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-900 dark:text-white">
+                    Belum Ada Menu Pesanan
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 max-w-xs mx-auto">
+                    Ketik menu pesanan Anda pada formulir di atas, atau muat data contoh untuk mencoba simulasi patungan.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleLoadDemoItem}
+                  className="px-4 py-2 rounded-xl bg-white dark:bg-slate-800 text-blue-600 dark:text-sky-400 text-xs font-bold border border-blue-200 dark:border-slate-700 shadow-sm hover:bg-blue-50 dark:hover:bg-slate-700 transition-all inline-flex items-center gap-1.5 active:scale-95"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Isi Contoh Pesanan (Demo)
+                </button>
+              </div>
+            ) : (
+              /* List Items */
+              <div className="space-y-2.5">
               {draft.items.map((item) => {
                 const assignedNames = item.assignedParticipantIds
                   .map((id) => draft.participants.find((p) => p.id === id)?.name || id)

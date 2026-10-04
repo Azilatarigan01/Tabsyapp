@@ -58,10 +58,12 @@ export default function Home() {
     // Load profile
     const profile = getStoredUserProfile();
     setUserProfile(profile);
+    if (!profile.isSetup) {
+      setShowOnboarding(true);
+    }
 
     const initData = async () => {
       try {
-        await seedSampleData();
         await refreshTransactions();
       } catch (err) {
         console.error('Initial data initialization error:', err);

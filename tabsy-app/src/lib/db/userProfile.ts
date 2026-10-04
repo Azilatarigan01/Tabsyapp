@@ -3,11 +3,11 @@ import { UserProfile } from '@/types';
 const PROFILE_KEY = 'tabsy_user_profile';
 
 export const DEFAULT_PROFILE: UserProfile = {
-  name: 'Zila',
+  name: 'Teman Tabsy',
   avatar: '👩‍💼',
   monthlyBudget: 3500000,
-  email: 'zila@tabsy.app',
-  isSetup: true,
+  email: 'user@tabsy.app',
+  isSetup: false,
 };
 
 export function getStoredUserProfile(): UserProfile {
@@ -21,7 +21,12 @@ export function getStoredUserProfile(): UserProfile {
   }
 
   try {
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return {
+      ...DEFAULT_PROFILE,
+      ...parsed,
+      isSetup: true,
+    };
   } catch {
     return DEFAULT_PROFILE;
   }
