@@ -19,7 +19,9 @@ import {
   History,
   Target,
   Plus,
+  Camera,
 } from 'lucide-react';
+import { ReceiptScanModal } from './ReceiptScanModal';
 
 interface RecordScreenProps {
   onTransactionSaved: () => void;
@@ -49,6 +51,31 @@ export const RecordScreen: React.FC<RecordScreenProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [showOcrModal, setShowOcrModal] = useState(false);
+
+  const handleSaveOcrTransaction = async (data: {
+    description: string;
+    amountRupiah: number;
+    date: string;
+    category: string;
+  }) => {
+    try {
+      setIsSaving(true);
+      await addTransaction({
+        description: data.description || 'Pengeluaran Struk',
+        amountRupiah: data.amountRupiah,
+        category: 'makan',
+        date: data.date || getLocalTodayDate(),
+      });
+      setSuccessToast(`Struk ${data.description} (${formatRupiah(data.amountRupiah)}) berhasil dicatat!`);
+      onTransactionSaved();
+      setTimeout(() => setSuccessToast(null), 3500);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Gagal menyimpan transaksi struk.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // Budget calculations
   const budget = userProfile?.monthlyBudget || 3500000;
@@ -264,6 +291,27 @@ export const RecordScreen: React.FC<RecordScreenProps> = ({
         </div>
       </div>
 
+      {/* Quick OCR Banner */}
+      <div className="p-4 rounded-[28px] bg-gradient-to-r from-blue-600 via-sky-600 to-blue-700 text-white shadow-lg shadow-blue-500/20 flex items-center justify-between gap-3 animate-in fade-in">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center shrink-0">
+            <Camera className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h4 className="text-xs font-black tracking-wide">Punya Foto Struk Belanja?</h4>
+            <p className="text-[11px] text-blue-100">Pindai & catat otomatis dengan OCR lokal tanpa cloud.</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowOcrModal(true)}
+          className="px-3.5 py-2 rounded-xl bg-white text-blue-700 hover:bg-blue-50 text-xs font-black shadow-sm active:scale-95 transition-all shrink-0 flex items-center gap-1.5"
+        >
+          <Camera className="w-3.5 h-3.5" />
+          Scan Struk
+        </button>
+      </div>
+
       {/* Main Quick Input Card */}
       <div className="bg-white dark:bg-slate-900 rounded-[28px] border border-slate-100 dark:border-slate-800 p-5 shadow-[0_4px_24px_rgba(0,0,0,0.04)] space-y-4">
         <div className="flex items-center justify-between">
@@ -471,6 +519,16 @@ export const RecordScreen: React.FC<RecordScreenProps> = ({
           )}
         </button>
       </div>
+
+      {/* Receipt Scan Modal */}
+      <ReceiptScanModal
+        isOpen={showOcrModal}
+        onClose={() => setShowOcrModal(false)}
+        onSaveAsTransaction={handleSaveOcrTransaction}
+        onImportToSplitBill={() => {
+          onNavigateTab?.('split');
+        }}
+      />
     </div>
   );
 };

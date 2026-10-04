@@ -1,6 +1,6 @@
 {
   "name": "tabsy-app",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -16,6 +16,7 @@
     "next": "16.3.8",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "tesseract.js": "^7.0.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {

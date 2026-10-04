@@ -50,11 +50,14 @@ import {
   Layers,
   ChevronRight,
   RotateCcw,
+  Camera,
 } from 'lucide-react';
+import { ReceiptScanModal } from './ReceiptScanModal';
 
 export const SplitBillScreen: React.FC = () => {
   // Mode: 'rata' (Bagi Rata Simple) | 'item' (Pesanan per Item & Pembayaran)
   const [splitMode, setSplitMode] = useState<'rata' | 'item'>('rata');
+  const [showOcrScanModal, setShowOcrScanModal] = useState<boolean>(false);
 
   // ==========================================
   // MODE 1: BAGI RATA (SIMPLE) STATE (Start Clean!)
@@ -117,6 +120,46 @@ export const SplitBillScreen: React.FC = () => {
       setPaymentPayerId(draft.participants[0].id);
     }
   }, [draft.participants, newItemAssigned.length, paymentPayerId]);
+
+  const handleImportOcrToSplitBill = (scannedData: {
+    title: string;
+    date: string;
+    items: Array<{ name: string; quantity: number; price: number }>;
+    discount: number;
+    tax: number;
+    service: number;
+  }) => {
+    setSplitMode('item');
+    const participantsList = draft.participants.length > 0 ? draft.participants : [{ id: 'p-1', name: 'Saya' }];
+    const defaultParticipantId = participantsList[0].id;
+
+    const newItems: BillItem[] = scannedData.items.map((it, idx) => ({
+      id: `item-${Date.now()}-${idx}`,
+      name: it.name,
+      price: it.price,
+      quantity: it.quantity,
+      assignedParticipantIds: [defaultParticipantId],
+    }));
+
+    const updated: BillDraft = {
+      ...draft,
+      title: scannedData.title || 'Struk Belanja',
+      date: scannedData.date || getLocalTodayDate(),
+      items: newItems,
+      discountAmount: scannedData.discount || 0,
+      taxType: 'nominal',
+      taxValue: scannedData.tax || 0,
+      serviceType: 'nominal',
+      serviceValue: scannedData.service || 0,
+      participants: participantsList,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setDraft(updated);
+    saveBillDraft(updated);
+    setDraftSaveStatus('✓ Struk berhasil dipindai dan dimasukkan ke draft!');
+    setTimeout(() => setDraftSaveStatus(null), 3500);
+  };
 
   // ==========================================
   // MODE 1 CALCULATION
@@ -490,6 +533,27 @@ export const SplitBillScreen: React.FC = () => {
         </div>
       </div>
 
+      {/* Quick OCR Scan Struk Banner */}
+      <div className="p-4 rounded-[28px] bg-gradient-to-r from-blue-600 via-sky-600 to-blue-700 text-white shadow-lg shadow-blue-500/20 flex items-center justify-between gap-3 animate-in fade-in">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center shrink-0">
+            <Camera className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h4 className="text-xs font-black tracking-wide">Punya Foto Struk Belanja?</h4>
+            <p className="text-[11px] text-blue-100">Ekstrak otomatis menu, harga, & pajak dengan OCR lokal tanpa cloud.</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowOcrScanModal(true)}
+          className="px-3.5 py-2 rounded-xl bg-white text-blue-700 hover:bg-blue-50 text-xs font-black shadow-sm active:scale-95 transition-all shrink-0 flex items-center gap-1.5"
+        >
+          <Camera className="w-3.5 h-3.5" />
+          Scan Struk
+        </button>
+      </div>
+
       {/* Draft Save Feedback Banner */}
       {draftSaveStatus && (
         <div className="p-3.5 rounded-2xl bg-blue-50/90 border border-blue-200 text-blue-800 dark:bg-blue-950/40 dark:border-blue-800 dark:text-blue-300 text-xs font-bold flex items-center gap-2 animate-in fade-in">
@@ -802,6 +866,14 @@ export const SplitBillScreen: React.FC = () => {
                 Nama & Tanggal Tagihan
               </label>
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowOcrScanModal(true)}
+                  className="px-2.5 py-1 rounded-xl text-[11px] font-bold bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-700 hover:to-sky-600 text-white flex items-center gap-1 shadow-sm transition-all"
+                  title="Pindai foto struk dengan OCR lokal"
+                >
+                  <Camera className="w-3 h-3" /> Scan Struk
+                </button>
                 <button
                   type="button"
                   onClick={handleStartNewDraft}
@@ -1528,6 +1600,13 @@ export const SplitBillScreen: React.FC = () => {
           <strong className="text-sky-950 dark:text-sky-200">Kalkulator Presisi & Siap OCR:</strong> Data dan modul tagihan ini telah mendukung pembagian per-item, diskon pre-tax, serta pelunasan multi-pembayar. Model data ini siap menerima hasil scan struk belanja (Tahap OCR).
         </p>
       </div>
+
+      {/* Local OCR Receipt Scan Modal */}
+      <ReceiptScanModal
+        isOpen={showOcrScanModal}
+        onClose={() => setShowOcrScanModal(false)}
+        onImportToSplitBill={handleImportOcrToSplitBill}
+      />
     </div>
   );
 };
