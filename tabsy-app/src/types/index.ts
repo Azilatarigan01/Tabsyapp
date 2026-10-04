@@ -26,6 +26,18 @@ export const CATEGORIES: CategoryInfo[] = [
   { id: 'lainnya', label: 'Lainnya', icon: 'MoreHorizontal', color: 'text-zinc-500 bg-zinc-50 dark:bg-zinc-800' },
 ];
 
+export interface UserProfile {
+  name: string;
+  avatar: string;
+  monthlyBudget: number;
+  email?: string;
+  isSetup: boolean;
+}
+
+export const DEFAULT_AVATARS = [
+  '🧑‍💻', '👩‍💼', '👨‍🎓', '👩‍🎨', '🦊', '⚡', '☕', '🚀'
+];
+
 export interface Transaction {
   id: string; // UUID v4
   description: string; // Max 100 chars
@@ -40,6 +52,7 @@ export interface BackupDataV1 {
   formatVersion: 1;
   exportedAt: string; // ISO 8601
   transactions: Transaction[];
+  userProfile?: UserProfile;
 }
 
 export type FeeInputType = 'percent' | 'nominal';

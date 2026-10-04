@@ -2,14 +2,14 @@ import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'CatatCepat - Pencatatan & Split Bill Kilat',
-    short_name: 'CatatCepat',
+    name: 'Tabsy - Catat Pengeluaran & Split Bill Kilat',
+    short_name: 'Tabsy',
     description: 'Catat pengeluaran harian kilat dan hitung split bill patungan makan. 100% offline-first dan aman di browser.',
     start_url: '/',
     display: 'standalone',
     orientation: 'portrait',
-    background_color: '#0f172a',
-    theme_color: '#10b981',
+    background_color: '#0284c7',
+    theme_color: '#0284c7',
     icons: [
       {
         src: '/icon-192.png',

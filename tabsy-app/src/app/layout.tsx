@@ -13,12 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CatatCepat ⚡ - Catat Pengeluaran & Split Bill Kilat",
+  title: "Tabsy ⚡ - Catat Pengeluaran & Split Bill Kilat",
   description: "Aplikasi pencatatan pengeluaran harian kilat dan kalkulator split bill patungan makan. 100% offline-first dan aman di browser.",
-  applicationName: "CatatCepat",
+  applicationName: "Tabsy",
   appleWebApp: {
     capable: true,
-    title: "CatatCepat",
+    title: "Tabsy",
     statusBarStyle: "default",
   },
 };
@@ -28,7 +28,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#0f172a",
+  themeColor: "#0284c7",
 };
 
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
