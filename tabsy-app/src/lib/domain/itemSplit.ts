@@ -8,6 +8,7 @@ import {
   ItemSplitCalculationResult,
 } from '@/types';
 import { MAX_SAFE_NOMINAL, percentToBps, roundHalfUp } from './calculator';
+import { simplifyGroupDebts } from './debtSimplifier';
 
 /**
  * Largest Remainder Method (Hamilton-Hare method)
@@ -272,39 +273,24 @@ export function calculateItemSplit(draft: BillDraft): ItemSplitCalculationResult
   const settlementTransfers: SettlementTransfer[] = [];
 
   if (isFullyPaid) {
-    // Greedy matching algorithm
-    const debtors = participantBreakdowns
-      .filter((b) => b.balance > 0)
-      .map((b) => ({ id: b.participantId, name: b.participantName, amount: b.balance }));
+    const debtResult = simplifyGroupDebts(
+      participantBreakdowns.map((b) => ({
+        id: b.participantId,
+        name: b.participantName,
+        totalPaid: b.totalPaid,
+        totalShare: b.finalShareAmount,
+      }))
+    );
 
-    const creditors = participantBreakdowns
-      .filter((b) => b.balance < 0)
-      .map((b) => ({ id: b.participantId, name: b.participantName, amount: -b.balance }));
-
-    let dIdx = 0;
-    let cIdx = 0;
-
-    while (dIdx < debtors.length && cIdx < creditors.length) {
-      const debtor = debtors[dIdx];
-      const creditor = creditors[cIdx];
-      const transferAmount = Math.min(debtor.amount, creditor.amount);
-
-      if (transferAmount > 0) {
-        settlementTransfers.push({
-          fromParticipantId: debtor.id,
-          fromParticipantName: debtor.name,
-          toParticipantId: creditor.id,
-          toParticipantName: creditor.name,
-          amount: transferAmount,
-        });
-
-        debtor.amount -= transferAmount;
-        creditor.amount -= transferAmount;
-      }
-
-      if (debtor.amount === 0) dIdx++;
-      if (creditor.amount === 0) cIdx++;
-    }
+    debtResult.transfers.forEach((t) => {
+      settlementTransfers.push({
+        fromParticipantId: t.fromId,
+        fromParticipantName: t.fromName,
+        toParticipantId: t.toId,
+        toParticipantName: t.toName,
+        amount: t.amount,
+      });
+    });
   }
 
   return {

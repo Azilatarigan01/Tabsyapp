@@ -26,10 +26,17 @@ export const CATEGORIES: CategoryInfo[] = [
   { id: 'lainnya', label: 'Lainnya', icon: 'MoreHorizontal', color: 'text-zinc-500 bg-zinc-50 dark:bg-zinc-800' },
 ];
 
+export type UserGender = 'pria' | 'wanita' | 'lainnya';
+export type UserPersona = 'pelajar' | 'mahasiswa' | 'freshgrad' | 'pekerja' | 'wirausaha' | 'custom';
+
 export interface UserProfile {
   name: string;
   avatar: string;
   monthlyBudget: number;
+  birthDate?: string; // YYYY-MM-DD
+  gender?: UserGender;
+  persona?: UserPersona;
+  paydayDate?: number; // Tanggal gajian (1-31), default 25
   email?: string;
   isSetup: boolean;
 }
@@ -40,6 +47,7 @@ export const DEFAULT_AVATARS = [
 
 export interface Transaction {
   id: string; // UUID v4
+  userId?: string;
   description: string; // Max 100 chars
   amountRupiah: number; // Positive safe integer, max 1.000.000.000
   category: ExpenseCategory;
@@ -109,6 +117,7 @@ export interface Payment {
 
 export interface BillDraft {
   id: string; // UUID v4
+  shareToken?: string; // 8-char nanoid / token for public view
   title: string;
   date: string; // YYYY-MM-DD
   items: BillItem[];
@@ -166,4 +175,86 @@ export interface BackupDataV2 {
   transactions: Transaction[];
   userProfile?: UserProfile;
   billDrafts: BillDraft[];
+}
+
+// ==========================================
+// DAILY COMPANION: JADWAL & HABIT TRACKER
+// ==========================================
+
+export type ActivityCategory =
+  | 'work'
+  | 'study'
+  | 'meal'
+  | 'health'
+  | 'leisure'
+  | 'shopping'
+  | 'other';
+
+export interface DailyActivity {
+  id: string; // UUID v4
+  userId?: string;
+  title: string;
+  timeStart: string; // "HH:MM" 24h format
+  timeEnd?: string; // "HH:MM" 24h format
+  date: string; // YYYY-MM-DD
+  category: ActivityCategory;
+  isCompleted: boolean;
+  notes?: string;
+  estimatedCost?: number;
+  linkedExpenseId?: string; // Links directly to Transaction id
+  createdAt: string; // ISO 8601
+  updatedAt: string; // ISO 8601
+}
+
+export interface DailyHabit {
+  id: string;
+  userId?: string;
+  title: string;
+  icon: string; // Emoji e.g. "💧", "🏃", "💰"
+  category: 'health' | 'finance' | 'productivity' | 'mindfulness';
+  targetFrequency: 'daily' | 'weekly';
+  completedDates: string[]; // List of YYYY-MM-DD
+  streak: number;
+  createdAt: string;
+}
+
+// ==========================================
+// GAMIFIKASI & TROPHY BADGES (LINGORA STYLE)
+// ==========================================
+
+export interface UserGamification {
+  level: number;
+  currentExp: number;
+  targetExp: number;
+  gems: number; // 💎 Gems / Tabsy Coins
+  streakDays: number; // 🔥 Daily streak
+  lastActiveDate: string; // YYYY-MM-DD
+  unlockedBadgeIds: string[];
+  unlockedShopItemIds?: string[];
+  streakShields?: number; // 🛡️ Pelindung streak aktif
+  activeTheme?: string;
+}
+
+export interface ShopItem {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  costGems: number;
+  category: 'avatar' | 'theme' | 'perk';
+  unlocked: boolean;
+}
+
+export interface AchievementBadge {
+  id: string;
+  title: string;
+  description: string;
+  icon: string; // Emoji e.g. "🐣", "🏆", "🍕", "🔥"
+  category: 'streak' | 'record' | 'split' | 'habit' | 'special';
+  currentProgress: number;
+  maxProgress: number;
+  isUnlocked: boolean;
+  rewardGems: number;
+  rewardExp: number;
+  unlockedAt?: string;
 }

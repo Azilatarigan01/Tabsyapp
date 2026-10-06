@@ -16,7 +16,13 @@ import {
   createDefaultBillDraft,
   createSampleBillDraft,
   getLocalTodayDate,
+  addTransaction,
 } from '@/lib/db';
+import {
+  formatPublicBillData,
+  encodeBillToUrlPayload,
+} from '@/lib/domain/shareableBill';
+import { simplifyGroupDebts } from '@/lib/domain/debtSimplifier';
 import {
   BillDraft,
   BillItem,
@@ -50,14 +56,21 @@ import {
   Layers,
   ChevronRight,
   RotateCcw,
-  Camera,
 } from 'lucide-react';
-import { ReceiptScanModal } from './ReceiptScanModal';
 
-export const SplitBillScreen: React.FC = () => {
+export interface SplitBillScreenProps {
+  currentUserName?: string;
+  onNavigateTab?: (tab: 'catat' | 'split' | 'riwayat' | 'pengaturan') => void;
+  onTransactionAdded?: () => void;
+}
+
+export const SplitBillScreen: React.FC<SplitBillScreenProps> = ({
+  currentUserName = 'Saya',
+  onNavigateTab,
+  onTransactionAdded,
+}) => {
   // Mode: 'rata' (Bagi Rata Simple) | 'item' (Pesanan per Item & Pembayaran)
   const [splitMode, setSplitMode] = useState<'rata' | 'item'>('rata');
-  const [showOcrScanModal, setShowOcrScanModal] = useState<boolean>(false);
 
   // ==========================================
   // MODE 1: BAGI RATA (SIMPLE) STATE (Start Clean!)
@@ -69,13 +82,13 @@ export const SplitBillScreen: React.FC = () => {
   const [taxValueSimple, setTaxValueSimple] = useState<number | ''>(10);
   const [serviceTypeSimple, setServiceTypeSimple] = useState<FeeInputType>('percent');
   const [serviceValueSimple, setServiceValueSimple] = useState<number | ''>(5);
-  const [participantsSimple, setParticipantsSimple] = useState<string[]>(['Saya']);
+  const [participantsSimple, setParticipantsSimple] = useState<string[]>([currentUserName || 'Saya']);
   const [newParticipantSimple, setNewParticipantSimple] = useState('');
 
   // ==========================================
   // MODE 2: TAHAP 10 ITEM SPLIT & DRAFT STATE (Start Clean!)
   // ==========================================
-  const [draft, setDraft] = useState<BillDraft>(createDefaultBillDraft('Saya'));
+  const [draft, setDraft] = useState<BillDraft>(() => createDefaultBillDraft(currentUserName || 'Saya'));
   const [savedDrafts, setSavedDrafts] = useState<BillDraft[]>([]);
   const [showDraftsModal, setShowDraftsModal] = useState(false);
   const [draftSaveStatus, setDraftSaveStatus] = useState<string | null>(null);
@@ -97,11 +110,57 @@ export const SplitBillScreen: React.FC = () => {
   // Feedback states
   const [copied, setCopied] = useState(false);
 
-  // Load saved drafts on mount
+  // Fitur 3: Payment Bank & E-Wallet Info for WhatsApp & Public Share
+  const [paymentBankName, setPaymentBankName] = useState('BCA');
+  const [paymentAccountNumber, setPaymentAccountNumber] = useState('');
+  const [paymentAccountHolder, setPaymentAccountHolder] = useState(currentUserName || 'Saya');
+  const [showPaymentInfoInput, setShowPaymentInfoInput] = useState(false);
+
+  // Recording Personal Share to Expenses (Aktifitas Catatan Sendiri)
+  const [recordedStatus, setRecordedStatus] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+
+  const handleRecordMyShare = async (amount: number, description: string) => {
+    if (!amount || amount <= 0 || isRecording) return;
+    setIsRecording(true);
+    try {
+      await addTransaction({
+        description,
+        amountRupiah: Math.round(amount),
+        category: 'makan',
+        date: getLocalTodayDate(),
+      });
+      setRecordedStatus(`✓ Bagian Anda sebesar ${formatRupiah(Math.round(amount))} sukses dicatat ke Buku Pengeluaran & Riwayat!`);
+      onTransactionAdded?.();
+      setTimeout(() => setRecordedStatus(null), 5000);
+    } catch (err) {
+      console.error('Gagal mencatat bagian sendiri ke transaksi:', err);
+      alert('Gagal mencatat transaksi ke penyimpanan lokal.');
+    } finally {
+      setIsRecording(false);
+    }
+  };
+
+  // Load saved drafts on mount & auto-load active draft from OCR
   const refreshDrafts = useCallback(async () => {
     try {
       const all = await getAllBillDrafts();
       setSavedDrafts(all);
+
+      if (typeof window !== 'undefined') {
+        const activeDraftId = localStorage.getItem('tabsy_active_draft_id');
+        if (activeDraftId) {
+          const matched = all.find((d) => d.id === activeDraftId);
+          if (matched) {
+            setDraft(matched);
+            setSplitMode('item');
+            localStorage.removeItem('tabsy_active_draft_id');
+            setDraftSaveStatus(`✓ Draft "${matched.title}" berhasil dimuat!`);
+            setTimeout(() => setDraftSaveStatus(null), 3500);
+            return;
+          }
+        }
+      }
     } catch (err) {
       console.error('Error fetching bill drafts:', err);
     }
@@ -121,43 +180,63 @@ export const SplitBillScreen: React.FC = () => {
     }
   }, [draft.participants, newItemAssigned.length, paymentPayerId]);
 
-  const handleImportOcrToSplitBill = (scannedData: {
-    title: string;
-    date: string;
-    items: Array<{ name: string; quantity: number; price: number }>;
-    discount: number;
-    tax: number;
-    service: number;
-  }) => {
-    setSplitMode('item');
-    const participantsList = draft.participants.length > 0 ? draft.participants : [{ id: 'p-1', name: 'Saya' }];
-    const defaultParticipantId = participantsList[0].id;
-
-    const newItems: BillItem[] = scannedData.items.map((it, idx) => ({
-      id: `item-${Date.now()}-${idx}`,
-      name: it.name,
-      price: it.price,
-      quantity: it.quantity,
-      assignedParticipantIds: [defaultParticipantId],
+  // Helper: Bagi Rata Semua Menu ke Semua Peserta
+  const handleAssignAllItemsToAll = () => {
+    if (draft.participants.length === 0 || draft.items.length === 0) return;
+    const allIds = draft.participants.map((p) => p.id);
+    const updatedItems = draft.items.map((it) => ({
+      ...it,
+      assignedParticipantIds: allIds,
     }));
-
-    const updated: BillDraft = {
-      ...draft,
-      title: scannedData.title || 'Struk Belanja',
-      date: scannedData.date || getLocalTodayDate(),
-      items: newItems,
-      discountAmount: scannedData.discount || 0,
-      taxType: 'nominal',
-      taxValue: scannedData.tax || 0,
-      serviceType: 'nominal',
-      serviceValue: scannedData.service || 0,
-      participants: participantsList,
-      updatedAt: new Date().toISOString(),
-    };
-
+    const updated: BillDraft = { ...draft, items: updatedItems, updatedAt: new Date().toISOString() };
     setDraft(updated);
     saveBillDraft(updated);
-    setDraftSaveStatus('✓ Struk berhasil dipindai dan dimasukkan ke draft!');
+    setDraftSaveStatus('✓ Semua menu berhasil dibagikan rata ke semua peserta!');
+    setTimeout(() => setDraftSaveStatus(null), 3000);
+  };
+
+  // Helper: Talangi Lunas ke Kasir oleh orang pertama ("Saya")
+  const handleQuickFullPaymentByMe = () => {
+    if (draft.participants.length === 0) return;
+    const payer = draft.participants[0];
+    const totalNeeded = calculationItem.totalBill;
+    const newPayment: Payment = {
+      id: `pay-${Date.now()}`,
+      participantId: payer.id,
+      amountPaid: totalNeeded,
+      note: 'Talangan lunas ke kasir',
+      paidAt: new Date().toISOString(),
+    };
+    const updated: BillDraft = {
+      ...draft,
+      payments: [newPayment],
+      updatedAt: new Date().toISOString(),
+    };
+    setDraft(updated);
+    saveBillDraft(updated);
+    setDraftSaveStatus(`✓ Pembayaran lunas ${formatRupiah(totalNeeded)} dicatat atas nama ${payer.name}!`);
+    setTimeout(() => setDraftSaveStatus(null), 3500);
+  };
+
+  // Helper: Finalisasi Tagihan
+  const handleToggleFinalize = async () => {
+    if (!validation.isValid) {
+      alert('Tagihan belum dapat difinalisasi karena masih ada syarat yang belum lengkap.');
+      return;
+    }
+    const updated: BillDraft = {
+      ...draft,
+      isFinalized: !draft.isFinalized,
+      updatedAt: new Date().toISOString(),
+    };
+    setDraft(updated);
+    await saveBillDraft(updated);
+    await refreshDrafts();
+    setDraftSaveStatus(
+      updated.isFinalized
+        ? '🎉 Tagihan berhasil difinalisasi & dikunci!'
+        : 'Draft tagihan dibuka kembali untuk diedit.'
+    );
     setTimeout(() => setDraftSaveStatus(null), 3500);
   };
 
@@ -190,6 +269,32 @@ export const SplitBillScreen: React.FC = () => {
   // ==========================================
   const validation = useMemo(() => validateBillDraftForFinalization(draft), [draft]);
   const calculationItem = useMemo(() => calculateItemSplit(draft), [draft]);
+
+  // Fitur 2: Group Debt Simplification Memo (Algoritma Ringkas Utang)
+  const simplifiedDebtResult = useMemo(() => {
+    if (calculationItem.totalBill <= 0 || draft.participants.length <= 1) {
+      return null;
+    }
+    if (calculationItem.isFullyPaid) {
+      return simplifyGroupDebts(
+        calculationItem.participantBreakdowns.map((b) => ({
+          id: b.participantId,
+          name: b.participantName,
+          totalPaid: b.totalPaid,
+          totalShare: b.finalShareAmount,
+        }))
+      );
+    }
+    const hostId = draft.participants[0]?.id;
+    return simplifyGroupDebts(
+      calculationItem.participantBreakdowns.map((b) => ({
+        id: b.participantId,
+        name: b.participantName,
+        totalPaid: b.participantId === hostId ? calculationItem.totalBill : 0,
+        totalShare: b.finalShareAmount,
+      }))
+    );
+  }, [calculationItem, draft.participants]);
 
   // Save current draft to IndexedDB
   const handleSaveDraft = async () => {
@@ -249,10 +354,22 @@ export const SplitBillScreen: React.FC = () => {
       name: trimmed,
     };
 
-    setDraft({
+    const updatedParticipants = [...draft.participants, newP];
+    // Automatically include the newly added friend in all existing items
+    const updatedItems = draft.items.map((it) => ({
+      ...it,
+      assignedParticipantIds: Array.from(new Set([...it.assignedParticipantIds, newP.id])),
+    }));
+
+    const updated: BillDraft = {
       ...draft,
-      participants: [...draft.participants, newP],
-    });
+      participants: updatedParticipants,
+      items: updatedItems,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setDraft(updated);
+    saveBillDraft(updated);
     setNewParticipantName('');
   };
 
@@ -312,20 +429,48 @@ export const SplitBillScreen: React.FC = () => {
   };
 
   const toggleAssigneeForItem = (itemId: string, participantId: string) => {
-    setDraft({
-      ...draft,
-      items: draft.items.map((it) => {
-        if (it.id !== itemId) return it;
-        const exists = it.assignedParticipantIds.includes(participantId);
-        const updated = exists
-          ? it.assignedParticipantIds.filter((id) => id !== participantId)
-          : [...it.assignedParticipantIds, participantId];
-        return {
-          ...it,
-          assignedParticipantIds: updated,
-        };
-      }),
+    const updatedItems = draft.items.map((it) => {
+      if (it.id !== itemId) return it;
+      const exists = it.assignedParticipantIds.includes(participantId);
+      const updated = exists
+        ? it.assignedParticipantIds.filter((id) => id !== participantId)
+        : [...it.assignedParticipantIds, participantId];
+      return {
+        ...it,
+        assignedParticipantIds: updated,
+      };
     });
+    const updated = { ...draft, items: updatedItems, updatedAt: new Date().toISOString() };
+    setDraft(updated);
+    saveBillDraft(updated);
+  };
+
+  // Assign a single item to all participants (Makan Bareng)
+  const assignItemToAll = (itemId: string) => {
+    const allIds = draft.participants.map((p) => p.id);
+    const updatedItems = draft.items.map((it) => {
+      if (it.id !== itemId) return it;
+      return {
+        ...it,
+        assignedParticipantIds: allIds,
+      };
+    });
+    const updated = { ...draft, items: updatedItems, updatedAt: new Date().toISOString() };
+    setDraft(updated);
+    saveBillDraft(updated);
+  };
+
+  // Reset all item assignments so each participant can claim their own menu
+  const handleResetAllItemAssignments = () => {
+    const updatedItems = draft.items.map((it) => ({
+      ...it,
+      assignedParticipantIds: [],
+    }));
+    const updated = { ...draft, items: updatedItems, updatedAt: new Date().toISOString() };
+    setDraft(updated);
+    saveBillDraft(updated);
+    setDraftSaveStatus('Pilihan menu dikosongkan. Silakan tap nama teman di masing-masing menu.');
+    setTimeout(() => setDraftSaveStatus(null), 3000);
   };
 
   // Payments management for Mode 2
@@ -419,17 +564,55 @@ export const SplitBillScreen: React.FC = () => {
       }),
       '────────────────────────────',
       res.isFullyPaid
-        ? `*Status Tagihan: LUNAS 100%*`
-        : `*Status Tagihan: BELUM SELESAI (Kurang ${formatRupiah(res.paymentDifference)})*`,
-      res.settlementTransfers.length > 0 ? '\n💸 *RENCANA PELUNASAN TRANSFER:*' : null,
-      ...res.settlementTransfers.map(
-        (t) => `• *${t.fromParticipantName}* transfer ke *${t.toParticipantName}*: ${formatRupiah(t.amount)}`
-      ),
+        ? `*Status Tagihan: LUNAS KE KASIR (Tinggal Pelunasan Antar Teman)*`
+        : `*Status Kasir: Total Rp${res.totalBill.toLocaleString('id-ID')} (Menunggu Pelunasan)*`,
+      (() => {
+        const transfers = res.settlementTransfers.length > 0
+          ? res.settlementTransfers
+          : (simplifiedDebtResult?.transfers || []).map((t) => ({
+              fromParticipantName: t.fromName,
+              toParticipantName: t.toName,
+              amount: t.amount,
+            }));
+        if (transfers.length === 0) return null;
+        return [
+          '\n💸 *RENCANA PELUNASAN TRANSFER:*',
+          ...transfers.map(
+            (t) => `• *${t.fromParticipantName}* transfer ke *${t.toParticipantName}*: ${formatRupiah(t.amount)}`
+          ),
+        ].join('\n');
+      })(),
+      paymentAccountNumber ? '────────────────────────────' : null,
+      paymentAccountNumber ? `💳 *TUJUAN TRANSFER:*\n• ${paymentBankName}: *${paymentAccountNumber}* (a.n. ${paymentAccountHolder})` : null,
+      '────────────────────────────',
+      `🔗 *Link Rincian & Ceklis Transfer:*\n${getPublicShareUrl()}`,
+      '*(Bisa dibuka langsung tanpa perlu login)*',
       '────────────────────────────',
       'Dihitung presisi tanpa selisih via Tabsy ⚡',
     ].filter(Boolean) as string[];
 
     return lines.join('\n');
+  };
+
+  const getPublicShareUrl = () => {
+    const publicData = formatPublicBillData(draft, calculationItem, {
+      bankName: paymentBankName,
+      accountNumber: paymentAccountNumber,
+      accountHolder: paymentAccountHolder,
+    });
+
+    // Save to /api/bills in background so it can be opened with clean 8-char URL
+    if (typeof window !== 'undefined') {
+      fetch('/api/bills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(publicData),
+      }).catch(() => {});
+    }
+
+    const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://tabsy.app';
+    const token = draft.shareToken || publicData.shareToken;
+    return `${baseUrl}/b/${token}`;
   };
 
   const handleCopy = () => {
@@ -464,7 +647,7 @@ export const SplitBillScreen: React.FC = () => {
   };
 
   return (
-    <div className="max-w-md mx-auto px-4 py-4 space-y-4">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-5">
       {/* Top Header Card: Neo-Banking Rounded Design */}
       <div className="bg-white dark:bg-slate-900 p-6 rounded-[28px] border border-blue-50/80 dark:border-slate-800 shadow-[0_8px_30px_rgba(30,58,138,0.04)] space-y-4">
         <div className="flex items-center justify-between">
@@ -474,10 +657,10 @@ export const SplitBillScreen: React.FC = () => {
             </div>
             <div>
               <span className="text-[11px] font-bold text-blue-600 dark:text-sky-400 uppercase tracking-wider block">
-                Alat Patungan Cerdas
+                Finansial Komparatif
               </span>
               <h2 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">
-                Kalkulator Bagi Tagihan
+                Bagi Tagihan & Patungan
               </h2>
             </div>
           </div>
@@ -501,7 +684,7 @@ export const SplitBillScreen: React.FC = () => {
         </div>
 
         <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-          Hitung patungan makan adil tanpa selisih senilai 1 rupiah pun. Mendukung diskon promo sebelum pajak & biaya servis, alokasi item pesanan, dan saldo pelunasan transfer.
+          Kalkulator pembagian tagihan presisi dengan alokasi proporsional diskon, pajak restoran, dan biaya layanan tanpa selisih pembulatan.
         </p>
 
         {/* Mode Selector Capsule: Symmetrical, Crisp, No-Wrap */}
@@ -516,7 +699,7 @@ export const SplitBillScreen: React.FC = () => {
             }`}
           >
             <Users className="w-4 h-4 shrink-0 text-blue-600 dark:text-sky-400" />
-            <span>1. Bagi Rata</span>
+            <span>Bagi Rata (Sederhana)</span>
           </button>
           <button
             type="button"
@@ -528,30 +711,9 @@ export const SplitBillScreen: React.FC = () => {
             }`}
           >
             <UtensilsCrossed className="w-4 h-4 shrink-0 text-blue-600 dark:text-sky-400" />
-            <span>2. Beda Menu</span>
+            <span>Rinci per Menu (Itemized)</span>
           </button>
         </div>
-      </div>
-
-      {/* Quick OCR Scan Struk Banner */}
-      <div className="p-4 rounded-[28px] bg-gradient-to-r from-blue-600 via-sky-600 to-blue-700 text-white shadow-lg shadow-blue-500/20 flex items-center justify-between gap-3 animate-in fade-in">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center shrink-0">
-            <Camera className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h4 className="text-xs font-black tracking-wide">Punya Foto Struk Belanja?</h4>
-            <p className="text-[11px] text-blue-100">Ekstrak otomatis menu, harga, & pajak dengan OCR lokal tanpa cloud.</p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowOcrScanModal(true)}
-          className="px-3.5 py-2 rounded-xl bg-white text-blue-700 hover:bg-blue-50 text-xs font-black shadow-sm active:scale-95 transition-all shrink-0 flex items-center gap-1.5"
-        >
-          <Camera className="w-3.5 h-3.5" />
-          Scan Struk
-        </button>
       </div>
 
       {/* Draft Save Feedback Banner */}
@@ -845,6 +1007,51 @@ export const SplitBillScreen: React.FC = () => {
                   <span>Bagikan Tagihan</span>
                 </button>
               </div>
+
+              {/* Mode 1 Catat Porsi Saya ke Buku Pengeluaran */}
+              {(() => {
+                const myShareObj =
+                  calculationSimple.shares.find((s) => s.name === currentUserName || s.name === 'Saya') ||
+                  calculationSimple.shares[0];
+                const myShareAmount = myShareObj?.finalAmount || 0;
+                if (myShareAmount <= 0) return null;
+                return (
+                  <div className="relative z-10 pt-2 space-y-2">
+                    <button
+                      type="button"
+                      disabled={isRecording}
+                      onClick={() =>
+                        handleRecordMyShare(
+                          myShareAmount,
+                          `Patungan: ${subtotalSimple ? 'Makan Bersama' : 'Tagihan'}`
+                        )
+                      }
+                      className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-300 hover:to-orange-300 text-slate-950 text-xs font-black flex items-center justify-center gap-2 shadow-lg shadow-amber-500/25 active:scale-95 transition-all"
+                    >
+                      <Sparkles className="w-4 h-4 text-slate-950" />
+                      <span>
+                        {isRecording
+                          ? 'Menyimpan ke Buku...'
+                          : `Catat Porsi Saya (${formatRupiah(myShareAmount)}) ke Pengeluaran ⚡`}
+                      </span>
+                    </button>
+
+                    {recordedStatus && (
+                      <div className="p-3 rounded-2xl bg-emerald-500/30 border border-emerald-300/40 text-white text-xs font-bold flex items-center justify-between animate-in fade-in">
+                        <span>{recordedStatus}</span>
+                        {onNavigateTab && (
+                          <button
+                            onClick={() => onNavigateTab('riwayat')}
+                            className="underline text-emerald-200 hover:text-white font-black ml-2 shrink-0"
+                          >
+                            Lihat Riwayat →
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           ) : (
             <div className="p-5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs font-semibold text-amber-800 dark:text-amber-300">
@@ -859,34 +1066,68 @@ export const SplitBillScreen: React.FC = () => {
       {/* ============================================================== */}
       {splitMode === 'item' && (
         <>
+          {/* Quick 3-Step Guided Workflow Banner */}
+          <div className="p-4 rounded-[24px] bg-gradient-to-r from-blue-50/90 via-sky-50/70 to-indigo-50/90 dark:from-slate-900 dark:via-blue-950/40 dark:to-slate-900 border border-blue-100 dark:border-slate-800 shadow-xs space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-blue-700 dark:text-sky-400 flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-blue-600" /> Alur 3 Langkah Patungan
+              </span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">
+                Cepat • Akurat • Tanpa Selisih
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-0.5 text-xs">
+              <div className="p-2.5 rounded-xl bg-white/90 dark:bg-slate-800/80 border border-blue-100/60 dark:border-slate-700/60 flex items-start gap-2 shadow-xs">
+                <span className="w-5 h-5 rounded-full bg-blue-600 text-white font-black text-[10px] flex items-center justify-center shrink-0 mt-0.5">1</span>
+                <div>
+                  <strong className="block text-slate-900 dark:text-white text-[11px]">Tulis Menu Pesanan</strong>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight block">Ketik nama menu, porsi, dan harga.</span>
+                </div>
+              </div>
+              <div className="p-2.5 rounded-xl bg-white/90 dark:bg-slate-800/80 border border-blue-100/60 dark:border-slate-700/60 flex items-start gap-2 shadow-xs">
+                <span className="w-5 h-5 rounded-full bg-blue-600 text-white font-black text-[10px] flex items-center justify-center shrink-0 mt-0.5">2</span>
+                <div>
+                  <strong className="block text-slate-900 dark:text-white text-[11px]">Tambah Teman & Bagi</strong>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight block">Ketik nama teman atau klik Bagi Rata.</span>
+                </div>
+              </div>
+              <div className="p-2.5 rounded-xl bg-white/90 dark:bg-slate-800/80 border border-blue-100/60 dark:border-slate-700/60 flex items-start gap-2 shadow-xs">
+                <span className="w-5 h-5 rounded-full bg-blue-600 text-white font-black text-[10px] flex items-center justify-center shrink-0 mt-0.5">3</span>
+                <div>
+                  <strong className="block text-slate-900 dark:text-white text-[11px]">Pelunasan & WhatsApp</strong>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight block">Klik "Saya Bayar Lunas" & bagikan rekap.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Bill Title & Actions Header */}
           <div className="bg-white dark:bg-slate-900 p-6 rounded-[28px] border border-blue-50/80 dark:border-slate-800 shadow-[0_8px_30px_rgba(30,58,138,0.04)] space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                Nama & Tanggal Tagihan
-              </label>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowOcrScanModal(true)}
-                  className="px-2.5 py-1 rounded-xl text-[11px] font-bold bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-700 hover:to-sky-600 text-white flex items-center gap-1 shadow-sm transition-all"
-                  title="Pindai foto struk dengan OCR lokal"
-                >
-                  <Camera className="w-3 h-3" /> Scan Struk
-                </button>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <label className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                  Nama & Tanggal Tagihan
+                </label>
+                <span className="text-[10px] text-slate-400">
+                  {draft.title || 'Belum ada nama'} • {draft.items.length} Menu
+                </span>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
                 <button
                   type="button"
                   onClick={handleStartNewDraft}
-                  className="px-2.5 py-1 rounded-xl text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-300 transition-colors"
+                  className="h-8.5 px-3 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1"
                 >
-                  + Baru
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Baru</span>
                 </button>
                 <button
                   type="button"
                   onClick={handleSaveDraft}
-                  className="px-3 py-1 rounded-xl text-[11px] font-bold bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1 shadow-sm transition-all"
+                  className="h-8.5 px-3.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 shadow-sm active:scale-95 transition-all whitespace-nowrap shrink-0"
                 >
-                  <Save className="w-3 h-3" /> Simpan
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Simpan</span>
                 </button>
               </div>
             </div>
@@ -896,7 +1137,7 @@ export const SplitBillScreen: React.FC = () => {
                 type="text"
                 value={draft.title}
                 onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-                placeholder="Judul tagihan..."
+                placeholder="Judul tagihan / nama resto..."
                 className="col-span-2 h-10 px-3.5 text-xs font-bold rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
               />
               <input
@@ -915,6 +1156,17 @@ export const SplitBillScreen: React.FC = () => {
                 <Users className="w-4 h-4 text-blue-600" />
                 Daftar Peserta ({draft.participants.length} Orang)
               </label>
+              {draft.items.length > 0 && draft.participants.length > 1 && (
+                <button
+                  type="button"
+                  onClick={handleAssignAllItemsToAll}
+                  className="text-[11px] font-bold text-blue-600 hover:text-blue-700 dark:text-sky-400 flex items-center gap-1 hover:underline"
+                  title="Alokasikan semua menu ke seluruh peserta secara merata"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  Bagi Rata Semua
+                </button>
+              )}
             </div>
 
             <form onSubmit={handleAddParticipantMode2} className="flex gap-2">
@@ -933,20 +1185,59 @@ export const SplitBillScreen: React.FC = () => {
               </button>
             </form>
 
+            {/* Quick Suggestions for friends */}
+            <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-slate-400">
+              <span className="text-[10px] font-semibold text-slate-400 mr-0.5">Saran cepat:</span>
+              {['Budi', 'Citra', 'Denis', 'Siti', 'Andi'].map((suggestedName) => {
+                const alreadyAdded = draft.participants.some((p) => p.name.toLowerCase() === suggestedName.toLowerCase());
+                if (alreadyAdded) return null;
+                return (
+                  <button
+                    key={suggestedName}
+                    type="button"
+                    onClick={() => {
+                      const newP: Participant = { id: `p-${Date.now()}`, name: suggestedName };
+                      const updatedParticipants = [...draft.participants, newP];
+                      const updated: BillDraft = {
+                        ...draft,
+                        participants: updatedParticipants,
+                        updatedAt: new Date().toISOString(),
+                      };
+                      setDraft(updated);
+                      saveBillDraft(updated);
+                    }}
+                    className="px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-blue-50 hover:text-blue-600 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-medium transition-colors"
+                  >
+                    + {suggestedName}
+                  </button>
+                );
+              })}
+            </div>
+
+            {draft.participants.length === 1 && (
+              <div className="p-3 rounded-2xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 text-[11px] text-blue-900 dark:text-sky-300 flex items-center gap-2">
+                <Users className="w-4 h-4 text-blue-600 shrink-0" />
+                <span>Ketik nama teman di atas lalu klik <strong>+ Tambah</strong> untuk membagi menu dengan mereka.</span>
+              </div>
+            )}
+
             <div className="flex flex-wrap gap-2 pt-1">
               {draft.participants.map((p) => (
                 <span
                   key={p.id}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-50/70 dark:bg-slate-800 text-blue-900 dark:text-blue-200 border border-blue-100 dark:border-slate-700"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-50/70 dark:bg-slate-800 text-blue-900 dark:text-blue-200 border border-blue-100 dark:border-slate-700 shadow-xs"
                 >
                   <span>{p.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveParticipantMode2(p.id)}
-                    className="text-slate-400 hover:text-rose-500 transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  {draft.participants.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveParticipantMode2(p.id)}
+                      className="text-slate-400 hover:text-rose-500 transition-colors"
+                      title={`Hapus ${p.name}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </span>
               ))}
             </div>
@@ -954,28 +1245,63 @@ export const SplitBillScreen: React.FC = () => {
 
           {/* Menu Items Management Card */}
           <div className="bg-white dark:bg-slate-900 p-6 rounded-[28px] border border-blue-50/80 dark:border-slate-800 shadow-[0_8px_30px_rgba(30,58,138,0.04)] space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <UtensilsCrossed className="w-4 h-4 text-blue-600" />
                 <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
                   Menu Pesanan ({draft.items.length} Item)
                 </h3>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   type="button"
                   onClick={handleLoadDemoItem}
                   className="text-[11px] font-bold text-blue-600 hover:text-blue-700 dark:text-sky-400 flex items-center gap-1 hover:underline"
-                  title="Muat 3 menu contoh untuk simulasi"
+                  title="Muat menu contoh untuk simulasi"
                 >
                   <Sparkles className="w-3 h-3" />
-                  Contoh Demo
+                  Isi Contoh Demo
                 </button>
-                <span className="text-xs font-black text-blue-600 dark:text-sky-400">
-                  Kotor: {formatRupiah(calculationItem.grossSubtotal)}
+                <span className="text-xs font-black text-blue-600 dark:text-sky-400 bg-blue-50 dark:bg-blue-950/60 px-2.5 py-1 rounded-xl">
+                  Subtotal: {formatRupiah(calculationItem.grossSubtotal)}
                 </span>
               </div>
             </div>
+
+            {/* Bulk Action Toolbar for 12 Items Assignment */}
+            {draft.items.length > 0 && draft.participants.length > 1 && (
+              <div className="p-3 rounded-2xl bg-gradient-to-r from-blue-50/80 to-sky-50/50 dark:from-slate-800/80 dark:to-slate-800/40 border border-blue-100 dark:border-slate-700 space-y-2">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <span className="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                    Cara Cepat Bagi Banyak Menu:
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleAssignAllItemsToAll}
+                      className="px-2.5 py-1 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold shadow-xs active:scale-95 transition-all flex items-center gap-1"
+                      title="Bagi rata seluruh menu ke semua peserta"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      ⚡ Bagi Rata Semua
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResetAllItemAssignments}
+                      className="px-2.5 py-1 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold border border-slate-200 dark:border-slate-700 shadow-xs active:scale-95 transition-all flex items-center gap-1"
+                      title="Kosongkan alokasi menu agar teman bisa pilih menunya masing-masing"
+                    >
+                      <RotateCcw className="w-3 h-3 text-slate-500" />
+                      Reset Pilihan
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                  👉 Jika masing-masing orang memesan menu berbeda, klik <strong>Reset Pilihan</strong> lalu cukup tap nama teman di setiap menu. Menu bersama cukup klik tombol <strong>Semua</strong>.
+                </p>
+              </div>
+            )}
 
             {/* Form Tambah Item Menu */}
             <form onSubmit={handleAddItemMode2} className="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 space-y-3">
@@ -1031,13 +1357,14 @@ export const SplitBillScreen: React.FC = () => {
                             setNewItemAssigned([...newItemAssigned, p.id]);
                           }
                         }}
-                        className={`px-3 py-1 rounded-xl text-xs font-bold border transition-all ${
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1 active:scale-95 ${
                           isChecked
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
                             : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
                         }`}
                       >
-                        {isChecked ? '✓ ' : ''}{p.name}
+                        {isChecked ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3 text-slate-400" />}
+                        {p.name}
                       </button>
                     );
                   })}
@@ -1063,7 +1390,7 @@ export const SplitBillScreen: React.FC = () => {
                     Belum Ada Menu Pesanan
                   </p>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 max-w-xs mx-auto">
-                    Ketik menu pesanan Anda pada formulir di atas, atau muat data contoh untuk mencoba simulasi patungan.
+                    Ketik menu pesanan Anda pada formulir di atas atau gunakan contoh pesanan.
                   </p>
                 </div>
                 <button
@@ -1076,20 +1403,20 @@ export const SplitBillScreen: React.FC = () => {
                 </button>
               </div>
             ) : (
-              /* List Items */
-              <div className="space-y-2.5">
+              /* List Items with Modern Participant Claim Chips */
+              <div className="space-y-3">
               {draft.items.map((item) => {
-                const assignedNames = item.assignedParticipantIds
-                  .map((id) => draft.participants.find((p) => p.id === id)?.name || id)
-                  .join(', ');
                 const isUnassigned = item.assignedParticipantIds.length === 0;
+                const isAllAssigned =
+                  draft.participants.length > 1 &&
+                  item.assignedParticipantIds.length === draft.participants.length;
 
                 return (
                   <div
                     key={item.id}
-                    className={`p-3.5 rounded-2xl border transition-all ${
+                    className={`p-4 rounded-2xl border transition-all ${
                       isUnassigned
-                        ? 'border-rose-300 bg-rose-50/50 dark:bg-rose-950/20 dark:border-rose-900'
+                        ? 'border-amber-300 bg-amber-50/40 dark:bg-amber-950/20 dark:border-amber-900/60 shadow-sm'
                         : 'border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm'
                     }`}
                   >
@@ -1097,7 +1424,7 @@ export const SplitBillScreen: React.FC = () => {
                       <div>
                         <div className="flex items-center gap-2">
                           <p className="font-bold text-sm text-slate-900 dark:text-white">{item.name}</p>
-                          <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700">
                             {item.quantity}x
                           </span>
                         </div>
@@ -1114,18 +1441,37 @@ export const SplitBillScreen: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => handleRemoveItemMode2(item.id)}
-                        className="text-slate-400 hover:text-rose-500 p-1 transition-colors"
+                        className="text-slate-400 hover:text-rose-500 p-1.5 transition-colors rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                        title="Hapus menu ini"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
 
-                    {/* Assigned Participants Pills */}
-                    <div className="pt-2">
-                      <span className="text-[10px] text-slate-400 block mb-1">
-                        Dialokasikan ke:
-                      </span>
-                      <div className="flex flex-wrap gap-1">
+                    {/* Assigned Participants Interactive Chips */}
+                    <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800/80 mt-2.5">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                          Siapa yang makan menu ini?
+                        </span>
+                        {draft.participants.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => assignItemToAll(item.id)}
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-lg transition-all flex items-center gap-1 active:scale-95 ${
+                              isAllAssigned
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                            }`}
+                            title="Bagi rata menu ini ke semua teman"
+                          >
+                            <Users className="w-3 h-3" />
+                            {isAllAssigned ? '✓ Semua Peserta' : '👥 Bagi ke Semua'}
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5">
                         {draft.participants.map((p) => {
                           const isAssigned = item.assignedParticipantIds.includes(p.id);
                           return (
@@ -1133,22 +1479,27 @@ export const SplitBillScreen: React.FC = () => {
                               key={p.id}
                               type="button"
                               onClick={() => toggleAssigneeForItem(item.id, p.id)}
-                              className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-colors ${
+                              className={`px-3 py-1 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 active:scale-95 ${
                                 isAssigned
-                                  ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/60 dark:text-sky-300 dark:border-blue-900'
-                                  : 'bg-slate-50 text-slate-400 border-slate-200 dark:bg-slate-800 dark:border-slate-700 line-through'
+                                  ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                                  : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200/80 dark:border-slate-700'
                               }`}
                             >
-                              {p.name}
+                              {isAssigned ? (
+                                <Check className="w-3.5 h-3.5 text-white" />
+                              ) : (
+                                <Plus className="w-3 h-3 text-slate-400" />
+                              )}
+                              <span>{p.name}</span>
                             </button>
                           );
                         })}
                       </div>
 
                       {isUnassigned && (
-                        <div className="mt-1.5 flex items-center gap-1 text-[11px] font-bold text-rose-600 dark:text-rose-400">
-                          <AlertTriangle className="w-3 h-3" />
-                          <span>Peringatan: Item tanpa peserta menghalangi finalisasi!</span>
+                        <div className="mt-2 flex items-center gap-1.5 text-[11px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 p-2 rounded-xl border border-amber-200 dark:border-amber-900/60">
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                          <span>Belum ada yang klaim menu ini — tap nama teman di atas untuk membaginya.</span>
                         </div>
                       )}
                     </div>
@@ -1403,32 +1754,167 @@ export const SplitBillScreen: React.FC = () => {
                 className="h-12 rounded-2xl bg-white hover:bg-sky-50 text-blue-700 text-xs font-black flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-black/10"
               >
                 <Share2 className="w-4 h-4 text-blue-600" />
-                <span>Bagikan Tagihan</span>
+                <span>Bagikan WhatsApp</span>
+              </button>
+            </div>
+
+            {/* Fitur 3: Expandable Info Rekening / E-Wallet Tujuan Transfer */}
+            <div className="relative z-10 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowPaymentInfoInput(!showPaymentInfoInput)}
+                className="text-[11px] font-bold text-sky-100 hover:text-white flex items-center gap-1 underline underline-offset-2 transition-colors"
+              >
+                <CreditCard className="w-3.5 h-3.5" />
+                {showPaymentInfoInput ? 'Tutup Pengaturan Rekening ▲' : '+ Tambah No. Rekening/E-Wallet ke WhatsApp & Link Publik ▼'}
+              </button>
+
+              {showPaymentInfoInput && (
+                <div className="mt-2.5 p-3.5 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 space-y-2 text-xs animate-in fade-in">
+                  <span className="font-extrabold text-white text-[11px] block">
+                    Info Tujuan Transfer Teman:
+                  </span>
+                  <div className="grid grid-cols-3 gap-2">
+                    <input
+                      type="text"
+                      value={paymentBankName}
+                      onChange={(e) => setPaymentBankName(e.target.value)}
+                      placeholder="Bank (cth: BCA)"
+                      className="h-9 px-2.5 rounded-xl bg-white/90 text-slate-900 font-bold placeholder:text-slate-400 focus:outline-none text-xs"
+                    />
+                    <input
+                      type="text"
+                      value={paymentAccountNumber}
+                      onChange={(e) => setPaymentAccountNumber(e.target.value)}
+                      placeholder="No. Rekening"
+                      className="h-9 px-2.5 rounded-xl bg-white/90 text-slate-900 font-bold placeholder:text-slate-400 focus:outline-none text-xs col-span-2"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    value={paymentAccountHolder}
+                    onChange={(e) => setPaymentAccountHolder(e.target.value)}
+                    placeholder="Atas Nama (a.n.)"
+                    className="w-full h-9 px-2.5 rounded-xl bg-white/90 text-slate-900 font-bold placeholder:text-slate-400 focus:outline-none text-xs"
+                  />
+                  <p className="text-[10px] text-sky-100">
+                    Otomatis terlampir di chat WhatsApp dan link publik yang dibuka teman.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Mode 2 Catat Porsi Saya ke Buku Pengeluaran */}
+            {(() => {
+              const myBreakdown =
+                calculationItem.participantBreakdowns.find(
+                  (b) => b.participantName === currentUserName || b.participantName === 'Saya'
+                ) || calculationItem.participantBreakdowns[0];
+              const myShareAmount = myBreakdown?.finalShareAmount || 0;
+              if (myShareAmount <= 0) return null;
+              return (
+                <div className="relative z-10 pt-2 space-y-2">
+                  <button
+                    type="button"
+                    disabled={isRecording}
+                    onClick={() =>
+                      handleRecordMyShare(
+                        myShareAmount,
+                        `Patungan: ${draft.title || 'Makan Bersama'}`
+                      )
+                    }
+                    className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-300 hover:to-orange-300 text-slate-950 text-xs font-black flex items-center justify-center gap-2 shadow-lg shadow-amber-500/25 active:scale-95 transition-all"
+                  >
+                    <Sparkles className="w-4 h-4 text-slate-950" />
+                    <span>
+                      {isRecording
+                        ? 'Menyimpan ke Buku...'
+                        : `Catat Porsi Saya (${formatRupiah(myShareAmount)}) ke Pengeluaran ⚡`}
+                    </span>
+                  </button>
+
+                  {recordedStatus && (
+                    <div className="p-3 rounded-2xl bg-emerald-500/30 border border-emerald-300/40 text-white text-xs font-bold flex items-center justify-between animate-in fade-in">
+                      <span>{recordedStatus}</span>
+                      {onNavigateTab && (
+                        <button
+                          onClick={() => onNavigateTab('riwayat')}
+                          className="underline text-emerald-200 hover:text-white font-black ml-2 shrink-0"
+                        >
+                          Lihat Riwayat →
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Finalization Button */}
+            <div className="relative z-10 pt-1">
+              <button
+                type="button"
+                onClick={handleToggleFinalize}
+                disabled={!validation.isValid}
+                className={`w-full py-3 px-4 rounded-2xl text-xs font-black flex items-center justify-center gap-2 shadow-md transition-all active:scale-98 ${
+                  draft.isFinalized
+                    ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20'
+                    : validation.isValid
+                    ? 'bg-white hover:bg-sky-50 text-blue-700 shadow-lg shadow-black/10'
+                    : 'bg-white/20 text-white/50 cursor-not-allowed border border-white/10'
+                }`}
+              >
+                {draft.isFinalized ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-emerald-100" />
+                    <span>✓ Tagihan Telah Difinalisasi (Klik untuk Buka Kunci)</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                    <span>Finalisasi & Kunci Tagihan Ini</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
 
-          {/* Settlements Transfers Plan (When Fully Paid) */}
-          {calculationItem.isFullyPaid && calculationItem.settlementTransfers.length > 0 && (
+          {/* Tagihan Finalized Banner */}
+          {draft.isFinalized && (
+            <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 flex items-center gap-2.5 text-xs font-bold text-emerald-800 dark:text-emerald-300 animate-in fade-in">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Tagihan ini sudah berstatus Final. Semua menu dan alokasi transfer terkunci aman.</span>
+            </div>
+          )}
+
+          {/* Fitur 2: Cara Penyelesaian Paling Ringkas (Group Debt Simplification) */}
+          {simplifiedDebtResult && simplifiedDebtResult.transfers.length > 0 && (
             <div className="bg-white dark:bg-slate-900 p-6 rounded-[28px] border border-blue-100 dark:border-slate-800 shadow-[0_8px_30px_rgba(30,58,138,0.04)] space-y-3 animate-in fade-in">
-              <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
-                <ArrowRightLeft className="w-4 h-4 text-blue-600" />
-                <span>Rencana Pelunasan Transfer Otomatis</span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
+                  <ArrowRightLeft className="w-4 h-4 text-blue-600" />
+                  <span>Cara Penyelesaian Paling Ringkas</span>
+                </div>
+                <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-slate-800 dark:text-sky-300 border border-blue-100 dark:border-slate-700">
+                  ⚡ {simplifiedDebtResult.simplifiedTransferCount} Transfer Saja
+                </span>
               </div>
               <p className="text-xs text-slate-500">
-                Semua uang sudah terbayar ke kasir. Berikut daftar transfer agar saldo semua peserta menjadi Rp0:
+                {calculationItem.isFullyPaid
+                  ? 'Diringkas otomatis dengan algoritma greedy match agar tidak ada transfer silang yang rumit:'
+                  : `Simulasi ringkas jika tagihan ditalangi oleh ${draft.participants[0]?.name || 'Saya'}. Teman cukup transfer sesuai daftar berikut:`}
               </p>
 
               <div className="space-y-2 pt-1">
-                {calculationItem.settlementTransfers.map((t, idx) => (
+                {simplifiedDebtResult.transfers.map((t, idx) => (
                   <div
                     key={idx}
-                    className="p-3 rounded-2xl bg-blue-50/70 dark:bg-slate-800 border border-blue-100 dark:border-slate-700 flex items-center justify-between text-xs"
+                    className="p-3.5 rounded-2xl bg-blue-50/70 dark:bg-slate-800 border border-blue-100 dark:border-slate-700 flex items-center justify-between text-xs"
                   >
                     <div className="flex items-center gap-2">
-                      <strong className="text-blue-900 dark:text-sky-300">{t.fromParticipantName}</strong>
+                      <strong className="text-blue-900 dark:text-sky-300 font-bold">{t.fromName}</strong>
                       <span className="text-slate-400">transfer ke</span>
-                      <strong className="text-blue-900 dark:text-sky-300">{t.toParticipantName}</strong>
+                      <strong className="text-blue-900 dark:text-sky-300 font-bold">{t.toName}</strong>
                     </div>
                     <span className="font-black text-blue-700 dark:text-sky-400 text-sm">
                       {formatRupiah(t.amount)}
@@ -1450,6 +1936,29 @@ export const SplitBillScreen: React.FC = () => {
                 Total Terbayar: {formatRupiah(calculationItem.totalPayments)}
               </span>
             </div>
+
+            {/* Quick 1-Click "Saya Bayar Lunas ke Kasir" Button */}
+            {calculationItem.totalBill > 0 && !calculationItem.isFullyPaid && (
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-blue-50 to-sky-50 dark:from-slate-800 dark:to-slate-800/60 border border-blue-100 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div>
+                  <p className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                    Talangi Kasir Sekaligus?
+                  </p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                    Otomatis catat pembayaran Rp{calculationItem.totalBill.toLocaleString('id-ID')} atas nama {draft.participants[0]?.name || 'Saya'}, agar rincian transfer teman langsung muncul.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleQuickFullPaymentByMe}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all whitespace-nowrap shrink-0"
+                >
+                  <CreditCard className="w-3.5 h-3.5" />
+                  Saya Bayar Lunas
+                </button>
+              </div>
+            )}
 
             {/* Input Pembayaran Baru */}
             <form onSubmit={handleAddPayment} className="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700 space-y-3">
@@ -1592,21 +2101,6 @@ export const SplitBillScreen: React.FC = () => {
           </div>
         </div>
       )}
-
-      {/* Info Notice */}
-      <div className="p-4 rounded-2xl bg-sky-50/70 dark:bg-sky-950/30 border border-sky-100 dark:border-sky-900/60 flex items-start gap-3 text-xs text-sky-800 dark:text-sky-300">
-        <Info className="w-4 h-4 text-sky-500 shrink-0 mt-0.5" />
-        <p className="leading-relaxed">
-          <strong className="text-sky-950 dark:text-sky-200">Kalkulator Presisi & Siap OCR:</strong> Data dan modul tagihan ini telah mendukung pembagian per-item, diskon pre-tax, serta pelunasan multi-pembayar. Model data ini siap menerima hasil scan struk belanja (Tahap OCR).
-        </p>
-      </div>
-
-      {/* Local OCR Receipt Scan Modal */}
-      <ReceiptScanModal
-        isOpen={showOcrScanModal}
-        onClose={() => setShowOcrScanModal(false)}
-        onImportToSplitBill={handleImportOcrToSplitBill}
-      />
     </div>
   );
 };

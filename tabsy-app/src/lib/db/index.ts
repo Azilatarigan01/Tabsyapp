@@ -1,10 +1,13 @@
 import Dexie, { type EntityTable } from 'dexie';
-import { Transaction, ExpenseCategory, BillDraft } from '@/types';
+import { Transaction, ExpenseCategory, BillDraft, DailyActivity, DailyHabit } from '@/types';
 import { MAX_SAFE_NOMINAL } from '@/lib/domain/calculator';
+import { getCurrentSession } from './auth';
 
 export class CatatCepatDatabase extends Dexie {
   transactions!: EntityTable<Transaction, 'id'>;
   billDrafts!: EntityTable<BillDraft, 'id'>;
+  activities!: EntityTable<DailyActivity, 'id'>;
+  habits!: EntityTable<DailyHabit, 'id'>;
 
   constructor() {
     super('CatatCepatDB');
@@ -16,7 +19,17 @@ export class CatatCepatDatabase extends Dexie {
     this.version(2).stores({
       transactions: 'id, date, category, createdAt',
       billDrafts: 'id, date, title, isFinalized, updatedAt',
-    }).upgrade((tx) => {
+    }).upgrade(() => {
+      // Preserve existing data without modification
+    });
+
+    // Version 3 Migration: Add activities & habits store for Daily Companion
+    this.version(3).stores({
+      transactions: 'id, date, category, createdAt',
+      billDrafts: 'id, date, title, isFinalized, updatedAt',
+      activities: 'id, date, timeStart, category, isCompleted',
+      habits: 'id, category, streak',
+    }).upgrade(() => {
       // Preserve existing data without modification
     });
   }
@@ -75,8 +88,10 @@ export async function addTransaction(dto: CreateTransactionDTO): Promise<Transac
   validateTransactionData(dto);
 
   const nowIso = new Date().toISOString();
+  const currentSession = getCurrentSession();
   const newTransaction: Transaction = {
     id: dto.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `tx-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`),
+    userId: currentSession?.id,
     description: dto.description.trim(),
     amountRupiah: dto.amountRupiah,
     category: dto.category,
@@ -153,21 +168,33 @@ export async function deleteTransaction(id: string): Promise<void> {
 }
 
 /**
- * Retrieve all transactions sorted by date (descending)
+ * Retrieve all transactions sorted by date (descending), isolated per user
  */
-export async function getAllTransactions(): Promise<Transaction[]> {
-  return await db.transactions.orderBy('date').reverse().toArray();
+export async function getAllTransactions(userId?: string): Promise<Transaction[]> {
+  const currentSession = getCurrentSession();
+  const uid = userId !== undefined ? userId : currentSession?.id;
+  const list = await db.transactions.orderBy('date').reverse().toArray();
+  if (uid) {
+    return list.filter((t) => t.userId === uid);
+  }
+  return list.filter((t) => !t.userId);
 }
 
 /**
- * Retrieve transactions for a specific month (e.g. "2026-10")
+ * Retrieve transactions for a specific month (e.g. "2026-10"), isolated per user
  */
-export async function getTransactionsByMonth(yearMonth: string): Promise<Transaction[]> {
-  return await db.transactions
+export async function getTransactionsByMonth(yearMonth: string, userId?: string): Promise<Transaction[]> {
+  const currentSession = getCurrentSession();
+  const uid = userId !== undefined ? userId : currentSession?.id;
+  const list = await db.transactions
     .where('date')
     .between(`${yearMonth}-01`, `${yearMonth}-31`, true, true)
     .reverse()
     .sortBy('date');
+  if (uid) {
+    return list.filter((t) => t.userId === uid);
+  }
+  return list.filter((t) => !t.userId);
 }
 
 export interface ImportResult {
@@ -346,5 +373,254 @@ export async function deleteBillDraft(id: string): Promise<void> {
  */
 export async function clearAllBillDrafts(): Promise<void> {
   await db.billDrafts.clear();
+}
+
+// ==========================================
+// DAILY COMPANION: ACTIVITIES & HABITS HELPERS
+// ==========================================
+
+export async function getDailyActivities(date: string, userId?: string): Promise<DailyActivity[]> {
+  try {
+    const currentSession = getCurrentSession();
+    const uid = userId !== undefined ? userId : currentSession?.id;
+    let list = await db.activities.where('date').equals(date).toArray();
+    if (uid) {
+      list = list.filter((a) => a.userId === uid);
+    } else {
+      list = list.filter((a) => !a.userId);
+    }
+    return list.sort((a, b) => a.timeStart.localeCompare(b.timeStart));
+  } catch (err) {
+    console.error('Gagal mengambil jadwal aktivitas harian:', err);
+    return [];
+  }
+}
+
+export async function addDailyActivity(
+  data: Omit<DailyActivity, 'id' | 'createdAt' | 'updatedAt'>
+): Promise<DailyActivity> {
+  const currentSession = getCurrentSession();
+  const now = new Date().toISOString();
+  const id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `act-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const newActivity: DailyActivity = {
+    ...data,
+    id,
+    userId: data.userId || currentSession?.id,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await db.activities.add(newActivity);
+  return newActivity;
+}
+
+export async function updateDailyActivity(
+  id: string,
+  updates: Partial<DailyActivity>
+): Promise<void> {
+  const existing = await db.activities.get(id);
+  if (!existing) return;
+  await db.activities.put({
+    ...existing,
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function toggleDailyActivity(id: string): Promise<boolean> {
+  const existing = await db.activities.get(id);
+  if (!existing) return false;
+  const newStatus = !existing.isCompleted;
+  await db.activities.update(id, {
+    isCompleted: newStatus,
+    updatedAt: new Date().toISOString(),
+  });
+  return newStatus;
+}
+
+export async function deleteDailyActivity(id: string): Promise<void> {
+  await db.activities.delete(id);
+}
+
+export async function getDailyHabits(userId?: string): Promise<DailyHabit[]> {
+  try {
+    const currentSession = getCurrentSession();
+    const uid = userId !== undefined ? userId : currentSession?.id;
+    let items = await db.habits.toArray();
+    if (uid) {
+      items = items.filter((h) => h.userId === uid);
+    } else {
+      items = items.filter((h) => !h.userId);
+    }
+    return items;
+  } catch (err) {
+    console.error('Gagal mengambil daftar habit harian:', err);
+    return [];
+  }
+}
+
+export async function addDailyHabit(
+  data: Omit<DailyHabit, 'id' | 'createdAt' | 'streak' | 'completedDates'>
+): Promise<DailyHabit> {
+  const currentSession = getCurrentSession();
+  const id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `hab-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const newHabit: DailyHabit = {
+    ...data,
+    id,
+    userId: data.userId || currentSession?.id,
+    completedDates: [],
+    streak: 0,
+    createdAt: new Date().toISOString(),
+  };
+  await db.habits.add(newHabit);
+  return newHabit;
+}
+
+export async function toggleDailyHabit(id: string, date: string): Promise<void> {
+  const habit = await db.habits.get(id);
+  if (!habit) return;
+
+  const datesSet = new Set(habit.completedDates || []);
+  if (datesSet.has(date)) {
+    datesSet.delete(date);
+  } else {
+    datesSet.add(date);
+  }
+
+  const updatedDates = Array.from(datesSet).sort();
+  // Simple streak recalculation: consecutive days ending today or yesterday
+  const streak = updatedDates.length;
+
+  await db.habits.update(id, {
+    completedDates: updatedDates,
+    streak,
+  });
+}
+
+export async function deleteDailyHabit(id: string): Promise<void> {
+  await db.habits.delete(id);
+}
+
+/**
+ * Seed initial companion habits & sample agenda if empty
+ */
+export async function seedStarterCompanionDataIfEmpty(): Promise<void> {
+  try {
+    const habitCount = await db.habits.count();
+    if (habitCount === 0) {
+      const today = getLocalTodayDate();
+      const defaultHabits: DailyHabit[] = [
+        {
+          id: 'hab-water',
+          title: 'Minum 2L Air Putih',
+          icon: '💧',
+          category: 'health',
+          targetFrequency: 'daily',
+          completedDates: [today],
+          streak: 3,
+          createdAt: new Date().toISOString(),
+        },
+        {
+          id: 'hab-nospend',
+          title: '0 Belanja Impulsif (Disiplin Budget)',
+          icon: '💰',
+          category: 'finance',
+          targetFrequency: 'daily',
+          completedDates: [today],
+          streak: 5,
+          createdAt: new Date().toISOString(),
+        },
+        {
+          id: 'hab-workout',
+          title: 'Olahraga / Jalan 20 Menit',
+          icon: '🏃',
+          category: 'health',
+          targetFrequency: 'daily',
+          completedDates: [],
+          streak: 2,
+          createdAt: new Date().toISOString(),
+        },
+        {
+          id: 'hab-track',
+          title: 'Catat Semua Pengeluaran Hari Ini',
+          icon: '⚡',
+          category: 'finance',
+          targetFrequency: 'daily',
+          completedDates: [today],
+          streak: 4,
+          createdAt: new Date().toISOString(),
+        },
+        {
+          id: 'hab-read',
+          title: 'Membaca / Belajar Skill 15 Menit',
+          icon: '📖',
+          category: 'productivity',
+          targetFrequency: 'daily',
+          completedDates: [],
+          streak: 1,
+          createdAt: new Date().toISOString(),
+        },
+      ];
+      await db.habits.bulkAdd(defaultHabits);
+    }
+
+    const todayStr = getLocalTodayDate();
+    const actCount = await db.activities.where('date').equals(todayStr).count();
+    if (actCount === 0) {
+      const defaultActivities: DailyActivity[] = [
+        {
+          id: `act-1-${Date.now()}`,
+          title: 'Sarapan Sehat & Kopi Pagi',
+          timeStart: '07:30',
+          timeEnd: '08:15',
+          date: todayStr,
+          category: 'meal',
+          isCompleted: true,
+          estimatedCost: 20000,
+          notes: 'Sarapan roti panggang + es kopi susu',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: `act-2-${Date.now()}`,
+          title: 'Makan Siang Bareng Teman Kantor',
+          timeStart: '12:00',
+          timeEnd: '13:00',
+          date: todayStr,
+          category: 'meal',
+          isCompleted: false,
+          estimatedCost: 45000,
+          notes: 'Makan di resto dekat kantor, bisa split bill patungan',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: `act-3-${Date.now()}`,
+          title: 'Ngantor / Belajar Fokus & Review Tugas',
+          timeStart: '14:00',
+          timeEnd: '17:00',
+          date: todayStr,
+          category: 'work',
+          isCompleted: false,
+          notes: 'Fokus kerjaan harian tanpa gangguan',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: `act-4-${Date.now()}`,
+          title: 'Jogging Sore / Fitness',
+          timeStart: '17:30',
+          timeEnd: '18:30',
+          date: todayStr,
+          category: 'health',
+          isCompleted: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ];
+      await db.activities.bulkAdd(defaultActivities);
+    }
+  } catch (err) {
+    console.error('Error seeding starter companion data:', err);
+  }
 }
 

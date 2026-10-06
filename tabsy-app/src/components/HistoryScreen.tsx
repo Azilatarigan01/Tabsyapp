@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { Transaction, CATEGORIES, ExpenseCategory } from '@/types';
 import { formatRupiah, MAX_SAFE_NOMINAL } from '@/lib/domain/calculator';
-import { updateTransaction, deleteTransaction, addTransaction, seedSampleData, getLocalTodayDate } from '@/lib/db';
+import { updateTransaction, deleteTransaction, addTransaction, getLocalTodayDate } from '@/lib/db';
 import {
   Calendar,
   Search,
@@ -15,7 +15,6 @@ import {
   PlusCircle,
   TrendingDown,
   Clock,
-  Sparkles,
   AlertTriangle,
   RotateCcw,
   CheckCircle2,
@@ -208,20 +207,6 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
     }
   };
 
-  const handleSeed = async () => {
-    const count = await seedSampleData();
-    if (count > 0) {
-      setFeedbackMsg({
-        type: 'success',
-        text: `Berhasil memuat ${count} data transaksi contoh!`,
-      });
-      onTransactionsChanged();
-      setTimeout(() => setFeedbackMsg(null), 3500);
-    } else {
-      alert('Data sudah ada. Anda bisa mencatat transaksi baru secara langsung.');
-    }
-  };
-
   const getCategoryBadge = (catId: ExpenseCategory) => {
     const found = CATEGORIES.find((c) => c.id === catId);
     return found ? (
@@ -234,7 +219,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
   };
 
   return (
-    <div className="max-w-md mx-auto px-4 py-4 space-y-4">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-5">
       {/* Toast Feedback */}
       {feedbackMsg && (
         <div
@@ -311,16 +296,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
             </select>
           </div>
 
-          {/* Quick Seed Button */}
-          {transactions.length < 5 && (
-            <button
-              onClick={handleSeed}
-              className="px-2.5 py-1 text-[11px] font-semibold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-700 rounded-lg flex items-center gap-1"
-            >
-              <Sparkles className="w-3 h-3" />
-              + 10 Data Contoh
-            </button>
-          )}
+          {/* Total Matching Badge */}
+          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">
+            {filtered.length} dari {transactions.length} transaksi
+          </span>
         </div>
 
         {/* Search Input */}
@@ -330,7 +309,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari transaksi (cth: kopi, bensin, kos)..."
+            placeholder="Cari transaksi berdasarkan keterangan..."
             className="w-full h-9 pl-9 pr-3 text-xs rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
           />
         </div>
@@ -376,25 +355,19 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({
             </div>
             <div>
               <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                Belum ada transaksi yang sesuai
+                Belum Ada Catatan Transaksi
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Coba ubah kata kunci pencarian atau catat pengeluaran baru.
+                Mulai catat transaksi pengeluaran harian Anda agar keuangan terpantau rapi.
               </p>
             </div>
             <div className="flex justify-center gap-2 pt-2">
               <button
                 onClick={onGoToRecord}
-                className="px-4 py-2 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-700 hover:to-sky-600 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md shadow-blue-500/20 active:scale-95 transition-all"
+                className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-700 hover:to-sky-600 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md shadow-blue-500/20 active:scale-95 transition-all"
               >
                 <PlusCircle className="w-4 h-4" />
-                + Catat Sekarang
-              </button>
-              <button
-                onClick={handleSeed}
-                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold rounded-xl"
-              >
-                Muat 10 Data Contoh
+                Catat Transaksi Sekarang
               </button>
             </div>
           </div>
